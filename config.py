@@ -1,24 +1,26 @@
-"""Tunable constants shared by find_ttrpg_clubs.py and funnel_stats.py.
+"""Tunable constants shared by the pipeline scripts and funnel_stats.py.
 
-Has no dependency on the tavily package, so funnel_stats.py can import the
-real thresholds instead of keeping a copy in sync by hand.
+Has no dependency on the tavily package, and reads no files at import time, so
+any consumer can import the real thresholds without an API key or the data
+files present.
 """
 
-DEFAULT_INPUT_CSV = "./data/search_institutions_sample.csv"
+# a very small collection of iped institutions that have ttrpg clubs
+DEFAULT_INPUT_CSV = "./data/iped_institution_has_ttrpg_club.csv"
+
+# Stage 1 (classify_club_pages.py) writes RESULTS; stage 2
+# (extract_contact_info.py) reads it and writes CONTACTS.
 DEFAULT_RESULTS_CSV = "./data/ttrpg_clubs_search_results.csv"
+DEFAULT_CONTACTS_CSV = "./data/ttrpg_clubs_contacts.csv"
 
 # --- search ------------------------------------------------------------
 
-# TODO: refine these placeholder queries.
-QUERY_TEMPLATES = ["tabletop club {name}", "ttrpg {name}"]
+# One template per line, each containing a {name} placeholder substituted with
+# the college name at query time. Kept as a data file, like the word lists
+# below, so the queries can be edited without touching code.
+QUERY_TEMPLATES_PATH = "./config/query_templates.txt"
 
-MAX_RESULTS_PER_QUERY = 5
-
-# Generic social/wiki/review sites: they rank well but are rarely a club page.
-EXCLUDED_DOMAINS = [
-    "facebook.com", "reddit.com", "instagram.com",
-    "yelp.com", "wikipedia.org", "tiktok.com",
-]
+MAX_RESULTS_PER_QUERY = 10
 
 # basic (default) / fast / ultra-fast trade relevance for latency at 1 credit;
 # advanced is the most relevant at 2 credits.
@@ -30,19 +32,35 @@ SLEEP_BETWEEN_COLLEGES_S = 0.2
 # to catch a JS/consent-wall stub early in a run without hundreds of log lines.
 RAW_CONTENT_PREVIEW_COUNT = 5
 
-# --- gating --------------------------------------------------------------
+# --- gating ----------------------------------------------------------------
 
-# Minimum Tavily relevance score (0-1) before we pay to extract a page. Value
-# is from Tavily's docs example; recorded per row as passed_score_gate so it
-# can be checked against real score distributions via funnel_stats.py.
-TAVILY_RELEVANCE_THRESHOLD = 0.7
+# One phrase per line, matched case-insensitively as substrings. Kept as data
+# files so the lists can be edited without touching code.
+TTRPG_KEYWORDS_PATH = "./config/ttrpg_keywords.txt"
+CLUB_KEYWORDS_PATH = "./config/club_keywords.txt"
 
-# TODO: refine this keyword bag.
-TTRPG_KEYWORDS = [
-    "ttrpg", "tabletop", "dungeons and dragons", "dungeons & dragons", "d&d",
-    "pathfinder", "dnd club", "role playing game", "roleplaying game",
-    "game master", "dungeon master",
-]
+# Generic social/wiki/review sites: they rank well but are rarely a club page.
+EXCLUDED_DOMAINS_PATH = "./config/excluded_webpages.txt"
+
+
+def _load_lines(path: str) -> list[str]:
+    with open(path, encoding="utf-8") as f:
+        lines = (line.strip() for line in f)
+        return [line for line in lines if line and not line.startswith("#")]
+
+
+def load_word_list(path: str) -> list[str]:
+    """Read a file into a lowercased list, one entry per line, ignoring
+    blanks and #-comments. Used for keyword lists and the excluded-domain
+    list alike — both are simple line-delimited data.
+    """
+    return [line.lower() for line in _load_lines(path)]
+
+
+def load_query_templates(path: str) -> list[str]:
+    """Read query templates, preserving case (they're sent to search as-is)."""
+    return _load_lines(path)
+
 
 # --- CSV output ------------------------------------------------------------
 

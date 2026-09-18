@@ -1,0 +1,13 @@
+# Generic social/wiki/review/study-aggregator sites: they rank well but are
+# rarely a club page.
+facebook.com
+reddit.com
+instagram.com
+yelp.com
+wikipedia.org
+tiktok.com
+vaia.com
+nerdculture.com
+meetup.com
+eventbrite.com
+linkedin.com
