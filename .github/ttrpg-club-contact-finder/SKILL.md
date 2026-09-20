@@ -1,6 +1,6 @@
 ---
 name: ttrpg-club-finder
-description: Domain knowledge and pitfalls for the TTRPG-club contact-finding project — a pipeline that searches for university tabletop-RPG/gaming club pages via Tavily and extracts contact info (email/Discord) into a CSV. ALWAYS read this before touching config.py, gen_institutions.py, classify_club_pages.py, extract_contact_info.py, funnel_stats.py, random_sample_institutions.py, or any successor stage — even if the request doesn't say "ttrpg" explicitly. Also relevant for any college-club-finding or college-contact-scraping project built on Tavily at scale. Start here, then open the matching file under references/ for the stage you're actually editing — don't load all of them at once.
+description: Domain knowledge and pitfalls for the TTRPG-club contact-finding project — a pipeline that searches for university tabletop-RPG/gaming club pages via Tavily and extracts contact info (email/Discord) into a CSV. ALWAYS read this before touching config.py, gen_institutions.py, classify_club_pages.py, extract_contact_info.py, random_sample_institutions.py, or any successor stage — even if the request doesn't say "ttrpg" explicitly. Also relevant for any college-club-finding or college-contact-scraping project built on Tavily at scale. Start here, then open the matching file under references/ for the stage you're actually editing — don't load all of them at once.
 ---
 
 # TTRPG Club Finder — Project Knowledge
