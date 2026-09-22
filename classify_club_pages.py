@@ -80,7 +80,7 @@ FIELDNAMES = [
     "result_url", "result_title", "result_snippet", "result_score",
     "club_keywords_found_in_snippet", "ttrpg_keywords_found_in_snippet",
     "club_keywords_found_in_text", "ttrpg_keywords_found_in_text",
-    "raw_content_status", "extract_error",
+    "raw_content_status", "raw_content_error",
     "result_raw_content", "raw_content_length",
 ]
 
@@ -136,7 +136,7 @@ class SearchResult:
     club_keywords_text: list[str] = field(default_factory=list)
     ttrpg_keywords_text: list[str] = field(default_factory=list)
     raw_content: str = ""
-    extract_error: str = ""
+    raw_content_error: str = ""
     status: str = ""
 
     @classmethod
@@ -182,7 +182,7 @@ class SearchResult:
             "club_keywords_found_in_text": "; ".join(self.club_keywords_text),
             "ttrpg_keywords_found_in_text": "; ".join(self.ttrpg_keywords_text),
             "raw_content_status": self.status,
-            "extract_error": self.extract_error,
+            "raw_content_error": self.raw_content_error,
             # TODO: the full run should not carry whole pages in this column —
             # it is the bulk of the file size and nothing downstream of stage 2
             # needs it. Written in full only so the current test runs can be
@@ -264,7 +264,7 @@ def extract_raw_content(
     """Fetch page text for `urls`, updating those results in place.
 
     A failed extraction doesn't invalidate the search hit, so affected rows keep
-    an empty raw_content but record why via status/extract_error.
+    an empty raw_content but record why via status/raw_content_error.
     """
     try:
         response = tavily().extract(urls=urls, format="text")
@@ -272,7 +272,7 @@ def extract_raw_content(
         logger.debug("%s: extract() raised for all %d URLs: %s", name, len(urls), e)
         for url in urls:
             results[url].status = Status.EXCEPTION
-            results[url].extract_error = str(e)
+            results[url].raw_content_error = str(e)
         return
 
     answered = set()
@@ -291,7 +291,7 @@ def extract_raw_content(
         url = entry.get("url", "")
         if url in results:
             results[url].status = Status.PER_URL_FAILED
-            results[url].extract_error = entry.get("error", "")
+            results[url].raw_content_error = entry.get("error", "")
             answered.add(url)
 
     # Shouldn't happen, but don't silently drop a URL Tavily never mentions.
