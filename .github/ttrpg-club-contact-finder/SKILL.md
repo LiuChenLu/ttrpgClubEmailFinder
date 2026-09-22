@@ -1,6 +1,6 @@
 ---
 name: ttrpg-club-finder
-description: Domain knowledge and pitfalls for the TTRPG-club contact-finding project — a pipeline that searches for university tabletop-RPG/gaming club pages via Tavily and extracts contact info (email/Discord) into a CSV. ALWAYS read this before touching config.py, gen_institutions.py, classify_club_pages.py, extract_contact_info.py, random_sample_institutions.py, or any successor stage — even if the request doesn't say "ttrpg" explicitly. Also relevant for any college-club-finding or college-contact-scraping project built on Tavily at scale. Start here, then open the matching file under references/ for the stage you're actually editing — don't load all of them at once.
+description: Domain knowledge and pitfalls for the TTRPG-club contact-finding project — a pipeline that searches for university tabletop-RPG/gaming club pages via Tavily and extracts contact info (email/Discord) into a CSV. ALWAYS read this before touching config.py, build_institution_dataset.py, classify_club_pages.py, extract_contact_info.py, random_sample_institutions.py, or any successor stage — even if the request doesn't say "ttrpg" explicitly. Also relevant for any college-club-finding or college-contact-scraping project built on Tavily at scale. Start here, then open the matching file under references/ for the stage you're actually editing — don't load all of them at once.
 ---
 
 # TTRPG Club Finder — Project Knowledge
@@ -15,7 +15,7 @@ A sequential, file-handoff pipeline — each stage is a separate script run, not
 
 | Stage | Script                                                                  | Output                                | Reference                                                                                                     |
 | ----- | ----------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 0     | `gen_institutions.py`                                                   | `data/institutions.csv`               | [stage0-institutions.md](references/stage0-institutions.md)                                                   |
+| 0     | `build_institution_dataset.py`                                          | `data/institutions.csv`               | [stage0-institutions.md](references/stage0-institutions.md)                                                   |
 | 1     | `classify_club_pages.py`                                                | `data/ttrpg_clubs_search_results.csv` | [stage1-search.md](references/stage1-search.md)                                                               |
 | 2     | `extract_contact_info.py`                                               | `data/ttrpg_clubs_contacts.csv`       | [stage2-extraction.md](references/stage2-extraction.md) (also covers the not-yet-built Stage 3 assembly step) |
 | —     | `random_sample_institutions.py`, `ipeds_institution_has_ttrpg_club.csv` | test fixtures                         | [testing.md](references/testing.md)                                                                           |

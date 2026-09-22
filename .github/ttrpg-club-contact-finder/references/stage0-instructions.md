@@ -1,4 +1,4 @@
-# Stage 0 — `gen_institutions.py`
+# Stage 0 — `build_institution_dataset.py`
 
 **Output:** `data/institutions.csv`
 
