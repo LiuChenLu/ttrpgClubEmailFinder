@@ -1,30 +1,18 @@
-# Stage 2 — `extract_contact_info.py`
+# Stage 2 — `classify_candidates.py`
 
-**Output:** `data/ttrpg_clubs_contacts.csv`
+**Output:** `data/filtered_candidates.csv`
 
-Offline text processing, no network calls. Re-derives the text gate from Stage 1 and extracts emails/Discord invites/bare-word contact signal from the page text and snippets Stage 1 already gathered.
+Deduplicates and filters Stage 1's candidates. Computes club-keyword and ttrpg-keyword AND-matches (`club_keywords.txt` / `ttrpg_keywords.txt`) against both the snippet and any extracted page text, and discards results from excluded domains. Conservative by design — only discards on a clear negative signal; does **not** render a verdict on whether a result is really a club page. That's decided downstream in Stage 3 by the LLM.
 
-## Pitfall to know before touching extraction logic
+## Pitfalls to know before touching filtering/classification logic
 
-**Contact signals rank differently.** Email > Discord invite > bare "contact us" wording with no address/link. The last case usually means a contact form or login wall — route to manual/LLM review, don't discard it. Discarding it silently loses real clubs, not just noise.
-
-## Code specifics
-
-- This stage reads the full-page-text rows Stage 1 wrote, so the same `csv.field_size_limit` increase applies when parsing the input CSV.
+1. **Names don't match pages.** "University of Connecticut" clubs may only ever say "UConn." No reliable abbreviation list exists — avoid exact-phrase matching on college name as a filter condition here.
+2. **Wrong-school attribution.** A query for UConn once surfaced a CCSU event instead — a good relevance score doesn't guarantee the result is about the *target* school. **Not fixed at this stage.** School-identity verification is deferred to Stage 3 (`school_identifying_terms_found`, `name_variant_matched`) — don't try to solve it here with a name-matching gate, since that risks discarding legitimate "UConn"-only pages (pitfall #1).
+3. **Vendor-hosted club pages.** Platforms like CampusGroups, Modern Campus Involve, Anthology Engage, Corq, or Lounge often carry identifiable markers (e.g. "Powered by CampusGroups" in the header) — worth special-casing as an additional keep-signal. **Not yet implemented — TODO in this file.**
+4. **Amalgam/directory pages.** Some schools list every student org on one page. These should generally be kept, not discarded — they'll contain club/ttrpg keyword hits like any other match. Splitting out the relevant club's contact info from the rest of the directory happens downstream in Stage 3, not here.
 
 ## Open gaps
 
-- No disambiguation between multiple emails found on one page (e.g. club address vs. an individual officer's address); no contact-name extraction.
-- `CONTACT_WORD_RE` is currently one flat boolean — planned split into strong/weak confidence tiers.
-
-## TODO: Stage 3 (not built yet)
-
-Stage 3 doesn't exist as code yet. Its job will be to collapse this stage's one-row-per-search-result output down to one row per club, in the final `college_name, contact_info, source_url, contact_reason` shape, using closed reason codes rather than free text. The reason codes are a direct mapping from what this stage already detects, so keep them in mind if you're extending the extraction logic here — whatever new signal you add should map cleanly onto one of these (or a new one):
-
-| reason code | meaning |
-| --- | --- |
-| `email_in_page_text` | email found in extracted page text |
-| `email_in_snippet` | email found only in search snippet |
-| `discord_in_page_text` | Discord invite found in page text |
-| `contact_form_needs_review` | contact wording present, no address — needs manual look |
-| `no_signal` | passed text gate, no contact signal found |
+- Dedup logic — `pipeline_data_flow.md` states this stage dedupes Stage 1's results, but the current implementation isn't documented here yet. Needs a pass once confirmed.
+- Vendor-platform special-casing and amalgam-page detection (pitfalls #3, #4): not implemented.
+- No fix yet for wrong-school attribution (pitfall #2) anywhere in the pipeline; alternative search APIs under investigation for Stage 1, LLM-based check planned for Stage 3.

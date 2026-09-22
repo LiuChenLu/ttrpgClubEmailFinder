@@ -1,6 +1,6 @@
 ---
 name: ttrpg-club-finder
-description: Domain knowledge and pitfalls for the TTRPG-club contact-finding project — a pipeline that searches for university tabletop-RPG/gaming club pages via Tavily and extracts contact info (email/Discord) into a CSV. ALWAYS read this before touching config.py, build_institution_dataset.py, classify_club_pages.py, extract_contact_info.py, random_sample_institutions.py, or any successor stage — even if the request doesn't say "ttrpg" explicitly. Also relevant for any college-club-finding or college-contact-scraping project built on Tavily at scale. Start here, then open the matching file under references/ for the stage you're actually editing — don't load all of them at once.
+description: Domain knowledge and pitfalls for the TTRPG-club contact-finding project — a pipeline that searches for university tabletop-RPG/gaming club pages via Tavily and extracts contact info (email/Discord) into a CSV. ALWAYS read this before touching config.py, build_institution_dataset.py, fetch_candidates.py, filter_candidates.py, or extract_contact_info.py — even if the request doesn't say "ttrpg" explicitly. Start here for pitfalls and conventions; see pipeline_data_flow.md for the exact CSV schema of each stage's output; then open the matching file under references/ for the stage you're actually editing — don't load all of them at once.
 ---
 
 # TTRPG Club Finder — Project Knowledge
@@ -13,14 +13,19 @@ Build a CSV of TTRPG/gaming club contacts across US colleges (~6,000). One row p
 
 A sequential, file-handoff pipeline — each stage is a separate script run, not concurrent execution. Every stage writes its full output to CSV before the next stage reads it.
 
-| Stage | Script                                                                  | Output                                | Reference                                                                                                     |
-| ----- | ----------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 0     | `build_institution_dataset.py`                                          | `data/institutions.csv`               | [stage0-institutions.md](references/stage0-institutions.md)                                                   |
-| 1     | `classify_club_pages.py`                                                | `data/ttrpg_clubs_search_results.csv` | [stage1-search.md](references/stage1-search.md)                                                               |
-| 2     | `extract_contact_info.py`                                               | `data/ttrpg_clubs_contacts.csv`       | [stage2-extraction.md](references/stage2-extraction.md) (also covers the not-yet-built Stage 3 assembly step) |
-| —     | `random_sample_institutions.py`, `ipeds_institution_has_ttrpg_club.csv` | test fixtures                         | [testing.md](references/testing.md)                                                                           |
+**For the exact column-by-column schema of every stage's CSV — what each field means, which stage adds it, and how row cardinality changes stage to stage (e.g. one row per search result vs. one row per club) — see [`pipeline_data_flow.md`](pipeline_data_flow.md). It is the source of truth for data shape; this file covers pitfalls and conventions, not field-level schemas. Read it before writing any code that reads or writes one of these CSVs.**
 
-Open the reference doc for the script you're actually editing — [stage0-institutions.md](references/stage0-institutions.md) for institution generation, [stage1-search.md](references/stage1-search.md) for matching/search logic, [stage2-extraction.md](references/stage2-extraction.md) for extraction logic or CSV assembly, [testing.md](references/testing.md) for test fixtures — before writing that code. Each one only carries the pitfalls, API notes, and open gaps relevant to that stage; don't load all of them at once.
+| Stage | Script                                                                  | Output                         | Reference                                                   |
+| ----- | ----------------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------- |
+| 0     | `build_institution_dataset.py`                                          | `data/institutions.csv`        | [stage0-instructions.md](references/stage0-instructions.md) |
+| 1     | `fetch_candidates.py`                                                   | `data/candidates.csv`          | [stage1-instructions.md](references/stage1-instructions.md) |
+| 2     | `filter_candidates.py`                                                  | `data/filtered_candidates.csv` | [stage2-instructions.md](references/stage2-instructions.md) |
+| 3     | `extract_contact_info.py`                                               | `data/contacts.csv`            | [stage3-instructions.md](references/stage3-instructions.md) |
+| —     | `random_sample_institutions.py`, `ipeds_institution_has_ttrpg_club.csv` | test fixtures                  | [testing.md](references/testing.md)                         |
+
+> **Known gap:** this table reflects the redesigned 4-stage pipeline documented in `pipeline_data_flow.md` (the old Stage 1, `classify_club_pages.py`, is now split into a fetch step and a separate classify/filter step). The `references/*.md` docs below still describe the old 3-stage shape and script names and have not been updated to match — treat their stage numbers as stale until someone revises them.
+
+Open the reference doc for the script you're actually editing — [stage0-institutions.md](references/stage0-institutions.md) for institution generation, [stage1-search.md](references/stage1-search.md) for search/fetch logic, [stage2-extraction.md](references/stage2-extraction.md) for filtering, extraction logic, or CSV assembly, [testing.md](references/testing.md) for test fixtures — before writing that code. Each one only carries the pitfalls, API notes, and open gaps relevant to that stage; don't load all of them at once.
 
 ## Pitfalls — quick index
 

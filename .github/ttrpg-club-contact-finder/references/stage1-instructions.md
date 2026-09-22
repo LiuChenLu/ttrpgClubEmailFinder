@@ -1,24 +1,20 @@
+# Stage 1 — `fetch_candidates.py`
 
-# Stage 1 — `classify_club_pages.py`
+**Output:** `data/candidates.csv`
 
-**Output:** `data/ttrpg_clubs_search_results.csv`
+Tavily search + extract, one row per search result per college. This stage only fetches — it does not compute club/ttrpg keyword signals or render a keep/discard verdict; that happens in Stage 2 (`classify_candidates.py`).
 
-Tavily search + extract, one row per search result. Records snippet and/or full-text keyword (AND) signals only — this stage does **not** render a verdict on whether a result is really a club page; that's decided downstream.
+## Pitfalls to know before touching search/fetch logic
 
-## Pitfalls to know before touching matching/search logic
-
-1. **Names don't match pages.** "University of Connecticut" clubs may only ever say "UConn." No reliable abbreviation list exists — avoid exact-phrase matching on college name.
-2. **Wrong-school attribution.** A query for UConn once surfaced a CCSU event instead — a good relevance score doesn't guarantee the result is about the *target* school. Needs an explicit school-identity check, not just a score threshold.
-3. **`WEBADDR` (IPEDS official site) is not a usable domain filter.** Club pages routinely live off that domain — see vendor-hosted pages below. Use it as a soft signal (see `include_domains` / `mode="boost"` below), never a hard filter.
-4. **Vendor-hosted club pages.** Many clubs live on platforms like CampusGroups, Modern Campus Involve, Anthology Engage, Corq, or Lounge, not the university's own domain. These likely have identifiable markers (e.g. "Powered by CampusGroups" in the header) — worth special-casing. **Not yet implemented — TODO in this file.**
-5. **Amalgam/directory pages.** Some schools list every student org on one page. Ideally we pull only the contact information for the relevant club, not the whole directory.
-6. **Multi-campus systems** (SUNY, UC, Penn State) — match the specific campus, not the system name. (Stage 0 should already give you campus-level rows; don't re-collapse them here.)
+1. **`WEBADDR` (IPEDS official site) is not a usable domain filter.** Club pages routinely live off that domain — see vendor-hosted pages below. Use it as a soft signal (`include_domains` / `mode="boost"` below), never a hard filter.
+2. **Vendor-hosted club pages.** Many clubs live on platforms like CampusGroups, Modern Campus Involve, Anthology Engage, Corq, or Lounge, not the university's own domain. This is why extraction must not be restricted to `.edu` — the boost-not-filter approach above is what keeps these pages in the candidate pool. (Detecting these pages by header markers like "Powered by CampusGroups" is a classification signal, not a fetch concern — see Stage 2.)
+3. **Multi-campus systems** (SUNY, UC, Penn State) — match the specific campus, not the system name, when constructing search queries. (Stage 0 should already give you campus-level rows; don't re-collapse them here.)
 
 ## Tavily notes
 
 - `search()` runs per query template per college; a separate `extract()` fetches full text only for top-scoring candidates, avoiding extraction cost on every hit.
 - `search_depth="advanced"` (2 credits) beats `"basic"`/`"fast"` (1 credit) on relevance — currently used everywhere; worth revisiting at scale (see Scale & budget below).
-- `include_domains=["*.edu"], mode="boost"` ranks `.edu` higher **without excluding** legitimate vendor-hosted pages — never use hard `include_domains` exclusion here (ties back to pitfall #3/#4).
+- `include_domains=["*.edu"], mode="boost"` ranks `.edu` higher **without excluding** legitimate vendor-hosted pages — never use hard `include_domains` exclusion here (ties back to pitfall #1/#2).
 - `exclude_domains` filters generic social/wiki/review sites.
 - `extract()` reports per-URL failures in `failed_results` rather than raising — that list must be checked explicitly, or failures silently vanish.
 - Batch `extract()` per college (already done).
@@ -41,5 +37,5 @@ Tavily search + extract, one row per search result. Records snippet and/or full-
 
 ## Open gaps
 
-- No fix yet for wrong-school attribution (pitfall #2); alternative search APIs under investigation.
-- Vendor-platform special-casing and amalgam-page detection (pitfalls #4, #5): not implemented.
+- No retry logic yet for Tavily failures.
+- No checkpoint/resume for mid-run failures.
