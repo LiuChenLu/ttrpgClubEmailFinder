@@ -5,6 +5,8 @@
 from pathlib import Path
 import pandas as pd
 import subprocess
+import csv
+import io
 from math import radians, sin, cos, asin, sqrt
 
 INPUT_DATA_PATH = Path("./data/ipeds/IPEDS_2024-25_Provisional/IPEDS202425.accdb")
@@ -26,33 +28,35 @@ def distance(lat1, lon1, lat2, lon2):
 
     return R * c
 
+
+def has_edu_webaddr(webaddr: str) -> bool:
+    """Return True if webaddr is non-empty and contains '.edu' as a substring."""
+    return bool(webaddr) and ".edu" in webaddr.lower()
+
+
 def read_ipeds():
-    """Return the relevant HD2024 columns as a pandas DataFrame."""
+    """Return the relevant HD2024 columns as a pandas DataFrame.
+
+    Uses mdb-export rather than mdb-sql: mdb-sql has no field-quoting
+    mechanism, so any institution name containing a literal comma (e.g.
+    "First Institute of Travel, Inc.") silently corrupts a naive comma-split
+    parse. mdb-export quotes text fields by default, so csv.DictReader can
+    parse the output correctly regardless of embedded commas.
+    """
     columns = ["UNITID", "INSTNM", "CITY", "LONGITUD", "LATITUDE", "WEBADDR"]
-    query = "SELECT UNITID, INSTNM, CITY, LONGITUD, LATITUDE, WEBADDR FROM HD2024;"
 
     completed = subprocess.run(
-        ["mdb-sql", "-P", "-d", ",", str(INPUT_DATA_PATH)],
+        ["mdb-export", "--null", "", str(INPUT_DATA_PATH), "HD2024"],
         check=True,
         capture_output=True,
         text=True,
-        input=query,
     )
 
-    lines = [line.rstrip("\n") for line in completed.stdout.splitlines() if line.strip()]
-    if not lines:
+    rows = list(csv.DictReader(io.StringIO(completed.stdout)))
+    if not rows:
         return pd.DataFrame(columns=columns)
 
-    rows = []
-    for line in lines[1:]:
-        parts = line.split(",", 5)
-        if len(parts) != 6:
-            continue
-
-        row = {columns[i]: parts[i].strip() for i in range(len(columns))}
-        rows.append(row)
-
-    return pd.DataFrame(rows, columns=columns)
+    return pd.DataFrame(rows)[columns]
 
 
 def process_ipeds(df):
@@ -63,6 +67,12 @@ def process_ipeds(df):
     result["LONGITUD"] = pd.to_numeric(result["LONGITUD"], errors="coerce")
     result["LATITUDE"] = pd.to_numeric(result["LATITUDE"], errors="coerce")
     result["WEBADDR"] = result["WEBADDR"].fillna("").astype(str).str.strip()
+
+    edu_mask = result["WEBADDR"].apply(has_edu_webaddr)
+    dropped = int((~edu_mask).sum())
+    if dropped:
+        print(f"Dropping {dropped} institution(s) without a .edu WEBADDR")
+    result = result[edu_mask]
 
     coords_mask = result["LONGITUD"].notna() & result["LATITUDE"].notna()
     result["DISTANCE"] = pd.NA
@@ -90,7 +100,7 @@ def main():
     df = process_ipeds(df)
 
     OUTPUT_DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(OUTPUT_DATA_PATH, index=False)
+    df.to_csv(OUTPUT_DATA_PATH, index=False, quoting=csv.QUOTE_MINIMAL)
 
 
 if __name__ == '__main__':
