@@ -329,7 +329,7 @@ def main(input_csv: str = DEFAULT_INPUT_CSV, output_csv: str = DEFAULT_RESULTS_C
         writer.writeheader()
 
         for index, row in enumerate(csv.DictReader(f_in)):
-            unitid, name = row["UNITID"], row["NAME"]
+            unitid, name = row["unitid"], row["college_name"]
             results, errors = search_college(
                 name, ttrpg_kw, club_kw, query_templates, excluded_domains
             )

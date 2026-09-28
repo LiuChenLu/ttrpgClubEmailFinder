@@ -86,10 +86,10 @@ def process_ipeds(df):
         axis=1,
     )
 
-    result = result.rename(columns={"INSTNM": "NAME", "WEBADDR": "WEBSITE"})
-    result = result[["UNITID", "NAME", "CITY", "DISTANCE", "WEBSITE"]]
+    result = result.rename(columns={"UNITID":"unitid", "INSTNM": "college_name", "CITY": "city", "DISTANCE": "distance", "WEBADDR": "website"})
+    result = result[["unitid", "college_name", "city", "distance", "website"]]
     result = result.sort_values(
-        ["DISTANCE", "UNITID"], na_position="last", kind="mergesort"
+        ["distance", "unitid"], na_position="last", kind="mergesort"
     )
 
     return result
