@@ -4,7 +4,8 @@ For each college we run every query template through Tavily, de-duplicate hits
 by URL (keeping the higher score when a URL recurs across templates), and
 fetch the page text for the top-scoring candidates (see
 MAX_CANDIDATES_PER_COLLEGE). Every search hit gets a row whether or not it was
-extracted; columns that don't apply are left blank.
+extracted; columns that don't apply are left blank. Every input column is
+carried onto each output row, so later stages never need to join back to it.
 
 Two keyword tiers are recorded, neither of them a gate or a verdict:
   - snippet (OR): at least one list matched title+snippet. Recorded only.
@@ -75,8 +76,9 @@ class Status:
     SUCCEEDED = "attempt_succeeded"
 
 
-FIELDNAMES = [
-    "unitid", "college_name", "search_query",
+# Columns this stage adds. The input CSV's own columns are prepended in main().
+NEW_FIELDNAMES = [
+    "search_query",
     "result_url", "result_title", "result_snippet", "result_score",
     "club_keywords_found_in_snippet", "ttrpg_keywords_found_in_snippet",
     "club_keywords_found_in_text", "ttrpg_keywords_found_in_text",
@@ -168,10 +170,8 @@ class SearchResult:
         self.club_keywords_text = find_keywords(self.raw_content, club_kw)
         self.ttrpg_keywords_text = find_keywords(self.raw_content, ttrpg_kw)
 
-    def to_csv_row(self, unitid: str, college_name: str) -> dict:
+    def to_csv_row(self) -> dict:
         return {
-            "unitid": unitid,
-            "college_name": college_name,
             "search_query": self.query,
             "result_url": self.url,
             "result_title": self.title,
@@ -325,11 +325,14 @@ def main(input_csv: str = DEFAULT_INPUT_CSV, output_csv: str = DEFAULT_RESULTS_C
     with open(input_csv, newline="", encoding="utf-8") as f_in, \
             open(output_csv, "w", newline="", encoding="utf-8") as f_out:
 
-        writer = csv.DictWriter(f_out, fieldnames=FIELDNAMES)
+        reader = csv.DictReader(f_in)
+        writer = csv.DictWriter(
+            f_out, fieldnames=reader.fieldnames + NEW_FIELDNAMES
+        )
         writer.writeheader()
 
-        for index, row in enumerate(csv.DictReader(f_in)):
-            unitid, name = row["unitid"], row["college_name"]
+        for index, row in enumerate(reader):
+            name = row["college_name"]
             results, errors = search_college(
                 name, ttrpg_kw, club_kw, query_templates, excluded_domains
             )
@@ -340,19 +343,19 @@ def main(input_csv: str = DEFAULT_INPUT_CSV, output_csv: str = DEFAULT_RESULTS_C
             if not results and not errors:
                 tried = "; ".join(t.format(name=name) for t in query_templates)
                 writer.writerow({
-                    "unitid": unitid, "college_name": name,
+                    **row,
                     "search_query": f"NO_RESULTS: {tried}",
                 })
 
             for error in errors:
                 writer.writerow({
-                    "unitid": unitid, "college_name": name,
+                    **row,
                     "search_query": error.query,
                     "result_url": "ERROR", "result_title": error.message,
                 })
 
             for result in results:
-                writer.writerow(result.to_csv_row(unitid, name))
+                writer.writerow({**row, **result.to_csv_row()})
 
             time.sleep(SLEEP_BETWEEN_COLLEGES_S)
 
