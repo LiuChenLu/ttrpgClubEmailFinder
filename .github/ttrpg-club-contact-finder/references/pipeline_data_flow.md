@@ -18,9 +18,7 @@ Each row represents an IPEDS institution.
 
 Stage 1 involves a network call to the search API to fetch search hits for each college. Each college can have multiple searches and multiple search results.
 
-**Status:** Deduplication across a college's multiple search queries/results is being added to this stage now — in progress, not implemented as of this writing.
-
-Each row represents a search result.
+Each row represents a search result except for sentinel rows used to log error.
 
 | Column | Type | Stage | Notes |
 | --- | --- | --- | --- |
@@ -28,7 +26,7 @@ Each row represents a search result.
 | `college_name` | string | 0 | IPEDS institution name |
 | `city` | string | 0 | IPEDS city |
 | `website` | string | 0 | IPEDS official website |
-| `search_query` | string | 1 | Query sent to search API |
+| `search_query` | string | 1 | Query of the best scoring search result across queries |
 | `result_title` | string | 1 | — |
 | `result_url` | string | 1 | — |
 | `result_score` | float | 1 | Search API relevance score |
@@ -42,7 +40,7 @@ Each row represents a search result.
 
 Stage 2 filters the results from stage 1 to remove low quality hits. It is conservative with what it discards.
 
-Each row represents a search result.
+Each row represents a search result except for sentinel rows used to log error.
 
 | Column | Type | Stage | Notes |
 | --- | --- | --- | --- |
@@ -56,7 +54,7 @@ Each row represents a search result.
 | `result_snippet` | string | 1 | — |
 | `club_keywords_found_in_snippet` | string | 2 | List of `club_keywords.txt` hits in snippet |
 | `ttrpg_keywords_found_in_snippet` | string | 2 | List of `ttrpg_keywords.txt` hits in snippet |
-| `result_raw_content` | string | 1 | Extracted page text |
+| `result_raw_content` | string | 1 | Extracted page text in markdown |
 | `club_keywords_found_in_page` | string | 2 | List of `club_keywords.txt` hits in page |
 | `ttrpg_keywords_found_in_page` | string | 2 | List of `ttrpg_keywords.txt` hits in page |
 | `raw_content_length` | int | 1 | Length of `result_raw_content` |

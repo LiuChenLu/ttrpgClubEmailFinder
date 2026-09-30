@@ -2,12 +2,12 @@
 
 **Output:** `data/candidates.csv`
 
-Tavily search + extract, one row per search result per college. It deduplicates the results returned for each college. When deduplicating, the snippets are appended together. This is because snippets are not garaunteed to be be the same across multiple search queries, and we later look for keywords in any of the snippets.
+Tavily search + extract, one row per search result per college, except for sentinel rows used to log error. It deduplicates the results returned for each college. When deduplicating, the snippets are appended together. This is because snippets are not guaranteed to be the same across multiple search queries, and we later look for keywords in any of the snippets.
 
 ## Pitfalls to know before touching search/fetch logic
 
 1. **`website` (IPEDS official site) is not a domain filter.** Club pages routinely live off that domain.
-2. **Vendor-hosted club pages.** Many clubs live on platforms like CampusGroups, Modern Campus Involve, Anthology Engage, Corq, or Lounge, not the university's own domain. This is why extraction must not be restricted to `.edu` — the boost-not-filter approach above is what keeps these pages in the candidate pool. (Detecting these pages by header markers like "Powered by CampusGroups" is a classification signal, not a fetch concern — see Stage 2.)
+2. **Vendor-hosted club pages.** Many clubs live on platforms like CampusGroups, Modern Campus Involve, Anthology Engage, Corq, or Lounge, not the university's own domain. This is why extraction must not be restricted to `.edu`. (Detecting these pages by header markers like "Powered by CampusGroups" is a classification signal, not a fetch concern — see Stage 2.)
 3. **Multi-campus systems** (SUNY, UC, Penn State) — search queries search for campuses (e.g. Tricoci University of Beauty Culture-Elgin) rather than specific institutions. This allows for us to look for clubs that may only exist on a specific campus.
 
 ## Tavily notes
@@ -17,7 +17,7 @@ Tavily search + extract, one row per search result per college. It deduplicates 
   - `exclude_domains` filters generic social/wiki/review sites.
   - `country` is set to `"united states"` to boost content from the US.
   - `include_raw_content` is set to `True` for all fetches, which fetches the cleaned and parsed HTML content for each result.
-- A separate `extract()` fetches full text only for results where the raw_content failed to fetch. For simplicity, it does fetches any results that failed to fetch the raw_content, even if they are low quality. This allos us to handle filtering all in one place in stage 2.
+- A separate `extract()` fetches full text only for results where the raw_content failed to fetch. For simplicity, it fetches any results that failed to fetch the raw_content, even if they are low quality. We try to fetch 2 times with extract before leaving the field blank. This allows us to handle filtering all in one place in stage 2.
 - Track credit spend against budget before scaling up.
 - It may be worthwhile to implement retry logic for when Tavily fails to return a result — not yet implemented.
 
@@ -28,7 +28,7 @@ Tavily search + extract, one row per search result per college. It deduplicates 
 
 ## Scale & budget
 
-~4,000 colleges × 3 query templates × up to 3 extracts ≈ 18K searches + 18K extracts. Before a full run:
+Assuming a negligiable number of `extract` retries, ~4,000 colleges × 3 query templates × up to 3 extracts ≈ 12K searches + 12K extracts. Before a full run:
 
 - Reconsider always using `SEARCH_DEPTH="advanced"` (2 credits) vs. a cheap `"basic"` first pass.
 - This script doesn't checkpoint/resume — add resumable writes so a mid-run failure doesn't require restarting from scratch.
@@ -37,5 +37,4 @@ Tavily search + extract, one row per search result per college. It deduplicates 
 
 ## Open gaps
 
-- No retry logic yet for Tavily failures.
 - No checkpoint/resume for mid-run failures.
