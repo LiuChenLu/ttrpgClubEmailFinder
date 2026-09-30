@@ -2,25 +2,28 @@
 
 ## Stage 0 — `build_institution_dataset.py` output institutions.csv
 
-Stage 0 pulls only the relevant columns from the IPEDS database and writes them to a CSV.
+Stage 0 pulls only the relevant columns from the IPEDS database and writes them to a CSV. This stage also filter out institutions that do not have an .edu website registered on ipeds, as insitutions that do not have such an official website are likely too small to be worth searching.
 
-Each row represents an IPEDS institution. 
+Each row represents an IPEDS institution.
 
 | Column | Type | Stage | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `unitid` | string | 0 | IPEDS unit ID |
-| `college_name` | string | 0 | IPEDS institution name <!-- TODO change NAME to college_name and lower case all the csv headers -->|
+| `college_name` | string | 0 | IPEDS institution name |
 | `city` | string | 0 | IPEDS city |
 | `distance` | float | 0 | IPEDS distance from Hartford |
 | `website` | string | 0 | IPEDS official website |
 
 ## Stage 1 - Fetch candidates with Search API (`fetch_candidates.py`) output candidates.csv
 
-Stage 1 involves a network call to the search API to fetch search hits for each college that is significant enough to be considered. We use "does this college have an official .edu website registered on ipeds" as the signal for significant. Each college can have multiple searches and multiple search results. If raw_content fails to fetch and the website that has a `.edu` domain, has the college name in the address, or matches the IPEDS WEBADDR, we try to extract the page text.
+Stage 1 involves a network call to the search API to fetch search hits for each college. Each college can have multiple searches and multiple search results.
+
+**Status:** Deduplication across a college's multiple search queries/results is being added to this stage now — in progress, not implemented as of this writing.
 
 Each row represents a search result.
 
 | Column | Type | Stage | Notes |
+| --- | --- | --- | --- |
 | `unitid` | string | 0 | IPEDS unit ID |
 | `college_name` | string | 0 | IPEDS institution name |
 | `city` | string | 0 | IPEDS city |
@@ -30,46 +33,47 @@ Each row represents a search result.
 | `result_url` | string | 1 | — |
 | `result_score` | float | 1 | Search API relevance score |
 | `result_snippet` | string | 1 | — |
-| `raw_content_error` | string | 1 | optional human-readable detail for the failure |
-| `raw_content_status` | string | 1 | category of what happened to the extraction |
+| `raw_content_status` | string | 1 | result of the raw_content fetch |
+| `extract_status` | string | 1 | result of the extract fetch |
 | `raw_content_length` | int | 1 | Length of `result_raw_content` |
 | `result_raw_content` | string | 1 | Extracted page text |
 
 ## Stage 2 - Filter candidates (`filter_candidates.py`) output filtered_candidates.csv
 
-Stage 2 deduplicates and filters the results from stage 1 to remove low quality hits. It is conservative with what it discards.
-
-It discards any website that does not mention a club related term and a ttrpg related term in the snippet or raw results. It also discards any webpage from a domain that is in the list of excluded domains.
+Stage 2 filters the results from stage 1 to remove low quality hits. It is conservative with what it discards.
 
 Each row represents a search result.
 
 | Column | Type | Stage | Notes |
+| --- | --- | --- | --- |
 | `decision` | enum | 2 | one of `keep`/`discard` |
 | `unitid` | string | 0 | IPEDS unit ID |
 | `college_name` | string | 0 | IPEDS institution name |
 | `city` | string | 0 | IPEDS city |
+| `website` | string | 0 | IPEDS official website |
 | `result_title` | string | 1 | — |
 | `result_url` | string | 1 | — |
 | `result_snippet` | string | 1 | — |
-| `club_keywords_found_in_snippet` | string | 1 | List of `club_keywords.txt` hits in snippet |
-| `ttrpg_keywords_found_in_snippet` | string | 1 | List of `ttrpg_keywords.txt` hits in snippet |
+| `club_keywords_found_in_snippet` | string | 2 | List of `club_keywords.txt` hits in snippet |
+| `ttrpg_keywords_found_in_snippet` | string | 2 | List of `ttrpg_keywords.txt` hits in snippet |
 | `result_raw_content` | string | 1 | Extracted page text |
-| `club_keywords_found_in_page` | string | 1 | List of `club_keywords.txt` hits in page |
-| `ttrpg_keywords_found_in_page` | string | 1 | List of `ttrpg_keywords.txt` hits in page |
+| `club_keywords_found_in_page` | string | 2 | List of `club_keywords.txt` hits in page |
+| `ttrpg_keywords_found_in_page` | string | 2 | List of `ttrpg_keywords.txt` hits in page |
 | `raw_content_length` | int | 1 | Length of `result_raw_content` |
-| `extraction_status` | string | 1 | category of what happened to the extraction |
-| `raw_content_error` | string | 1 | optional human-readable detail for the failure |
 
-## Stage 3 - Classify with LLM contact info (`extract_contact_info.py`) output contacts.csv
+## Stage 3 - Classify and extract contact info (`extract_contact_info.py`) output contacts.csv
 
-Stage 3 feeds the filtered candidates to an LLM to classify them as a university club page, a conglamorate clubs page for the university, or not a club page. The LLM will also pull out contact info from the page if it exists.
+**Status:** Not implemented — this stage doesn't exist yet, so nothing in the table below is populated by real output today. It describes the target schema: once built, Stage 3 is meant to classify each filtered candidate as a university club page, a conglomerate clubs page for the university, or not a club page, and pull out contact info from the page if it exists (see `stage3-instructions.md`). A separate LLM-based approach is proposed in `LLM-proposal.md`, an early design draft; its schema doesn't match this table.
 
 Each row represents a club from a result. Each page can have multiple clubs, thus create multiple rows. Each club can also have multiple web results about it, thus each club could have mulitiple rows.
 
 | Column | Type | Stage | Notes |
+| --- | --- | --- | --- |
 | `club_name` | string | 3 | The club name, if any |
 | `unitid` | string | 1 | IPEDS unit ID |
 | `college_name` | string | 1 | IPEDS institution name |
+| `city` | string | 0 | IPEDS city |
+| `website` | string | 0 | IPEDS official website |
 | `result_title` | string | 1 | — |
 | `result_url` | string | 1 | — |
 | `classification` | enum | 3 | one of `club`/`conglam`/`not-a-club` |

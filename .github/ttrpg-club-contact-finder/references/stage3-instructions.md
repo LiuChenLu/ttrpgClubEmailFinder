@@ -2,7 +2,9 @@
 
 **Output:** `data/contacts.csv`
 
-Offline text processing, no network calls. Re-derives the text gate from Stage 1 and extracts emails/Discord invites/bare-word contact signal from the page text and snippets Stage 1 already gathered. This stage will be replaced by an LLM. An early draft proposal is in `LLM-proposal.md`.
+**Status:** Not implemented — this stage doesn't exist yet. Everything below describes its planned design: rule-based and offline, no LLM call. A separate, early-stage draft for a possible LLM-based version instead is sketched in `LLM-proposal.md`; that's not implemented either, and not reconciled with this doc.
+
+Offline text processing, no network calls. Re-derives the text gate from Stage 1 and extracts emails/Discord invites/bare-word contact signal from the page text and snippets Stage 1 already gathered.
 
 ## Pitfall to know before touching extraction logic
 
