@@ -1,4 +1,4 @@
-"""Tunable constants shared by the pipeline scripts and funnel_stats.py.
+"""Tunable constants shared by the pipeline scripts.
 
 Has no dependency on the tavily package, and reads no files at import time, so
 any consumer can import the real thresholds without an API key or the data
@@ -6,11 +6,15 @@ files present.
 """
 
 # a very small collection of iped institutions that have ttrpg clubs
-DEFAULT_INPUT_CSV = "./data/iped_institution_has_ttrpg_club.csv"
+HAS_TTRPG_CLUB_PATH = "./data/iped_institution_has_ttrpg_club.csv"
+RANDOM_COLLEGE_SAMEPLE = "./data/institutions_sample.csv"
+DEFAULT_INPUT_CSV = HAS_TTRPG_CLUB_PATH
 
-# Stage 1 (classify_club_pages.py) writes RESULTS; stage 2
-# (extract_contact_info.py) reads it and writes CONTACTS.
-DEFAULT_RESULTS_CSV = "./data/ttrpg_clubs_search_results.csv"
+# Stage 1 (fetch_candidates.py) writes CANDIDATES; stage 2
+# (filter_candidates.py) reads it and writes FILTERED; stage 3
+# (extract_contact_info.py) reads FILTERED and writes CONTACTS.
+DEFAULT_CANDIDATES_CSV = "./data/candidates.csv"
+DEFAULT_FILTERED_CSV = "./data/filtered_candidates.csv"
 DEFAULT_CONTACTS_CSV = "./data/ttrpg_clubs_contacts.csv"
 
 # --- search ------------------------------------------------------------
@@ -60,14 +64,3 @@ def load_word_list(path: str) -> list[str]:
 def load_query_templates(path: str) -> list[str]:
     """Read query templates, preserving case (they're sent to search as-is)."""
     return _load_lines(path)
-
-
-# --- CSV output ------------------------------------------------------------
-
-SNIPPET_CHARS = 300
-
-# --- funnel diagnostics ----------------------------------------------------
-
-# Below this raw_content length, a "succeeded but no contact signal" row isn't
-# worth hand-inspecting: more likely a thin/irrelevant page than a missed email.
-HAND_INSPECT_MIN_LENGTH = 200

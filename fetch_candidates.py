@@ -1,4 +1,4 @@
-"""Stage 1: search for candidate TTRPG club pages and record raw signals.
+"""Stage 1: search for candidate TTRPG club pages and record the raw results.
 
 For each college we run every query template through Tavily, de-duplicate hits
 by URL (keeping the higher score when a URL recurs across templates), and
@@ -7,13 +7,8 @@ MAX_CANDIDATES_PER_COLLEGE). Every search hit gets a row whether or not it was
 extracted; columns that don't apply are left blank. Every input column is
 carried onto each output row, so later stages never need to join back to it.
 
-Two keyword tiers are recorded, neither of them a gate or a verdict:
-  - snippet (OR): at least one list matched title+snippet. Recorded only.
-  - text (AND): what each list matched in the extracted page. Recorded only;
-    extract_contact_info.py applies it as a gate.
-
-This does NOT decide whether a result actually is a club page, and it makes no
-contact-info judgements. Stage 2 reads this CSV and does that offline.
+This makes no judgement about whether a result is a club page and computes no
+keyword signals. filter_candidates.py reads this CSV and does that offline.
 
 Setup:
     pip install tavily-python python-dotenv
@@ -25,10 +20,9 @@ diagnostics, and a raw_content preview for the first few colleges.
 
 from __future__ import annotations
 from config import (
-    CLUB_KEYWORDS_PATH, DEFAULT_INPUT_CSV, DEFAULT_RESULTS_CSV,
-    EXCLUDED_DOMAINS_PATH, MAX_RESULTS_PER_QUERY, QUERY_TEMPLATES_PATH,
-    RAW_CONTENT_PREVIEW_COUNT, SEARCH_DEPTH, SLEEP_BETWEEN_COLLEGES_S,
-    SNIPPET_CHARS, TTRPG_KEYWORDS_PATH,
+    DEFAULT_CANDIDATES_CSV, DEFAULT_INPUT_CSV, EXCLUDED_DOMAINS_PATH,
+    MAX_RESULTS_PER_QUERY, QUERY_TEMPLATES_PATH, RAW_CONTENT_PREVIEW_COUNT,
+    SEARCH_DEPTH, SLEEP_BETWEEN_COLLEGES_S,
     load_query_templates, load_word_list,
 )
 
@@ -38,7 +32,7 @@ import logging
 import os
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from tavily import TavilyClient
@@ -49,12 +43,12 @@ load_dotenv()
 DEBUG = bool(os.environ.get("TTRPG_DEBUG"))
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
-logger = logging.getLogger("classify_club_pages")
+logger = logging.getLogger("fetch_candidates")
 logger.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
 
-# No score or keyword floor gates extraction anymore — every college with at
-# least one search hit gets up to this many of its highest-scoring results
-# fetched in full, regardless of how weak the best of them looks.
+# No score floor gates extraction — every college with at least one search hit
+# gets up to this many of its highest-scoring results fetched in full,
+# regardless of how weak the best of them looks.
 MAX_CANDIDATES_PER_COLLEGE = 3
 
 # Control chars (NULs turn up in scraped text) make strict CSV parsers truncate
@@ -80,8 +74,6 @@ class Status:
 NEW_FIELDNAMES = [
     "search_query",
     "result_url", "result_title", "result_snippet", "result_score",
-    "club_keywords_found_in_snippet", "ttrpg_keywords_found_in_snippet",
-    "club_keywords_found_in_text", "ttrpg_keywords_found_in_text",
     "raw_content_status", "raw_content_error",
     "result_raw_content", "raw_content_length",
 ]
@@ -98,22 +90,6 @@ def sanitize_for_csv(text: str) -> str:
         return text
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     return _CONTROL_CHAR_RE.sub("", text)
-
-
-def find_keywords(text: str, keywords: list[str]) -> list[str]:
-    lowered = text.lower()
-    return [kw for kw in keywords if kw in lowered]
-
-
-# TODO: special-case club hosting vendors, each identifiable from the page
-# source: CampusGroups ("Powered by CampusGroups"), Modern Campus Involve,
-# Anthology Engage, Lounge, Corq.
-
-# TODO: detect when a URL is a directory of a university's clubs rather than
-# one specific club's page. These often rank well and mention plenty of
-# keywords (an A-Z list mentions "club" and often "tabletop"), but yield no
-# single club's contact info, so they need separating before anything
-# downstream treats a row as one club.
 
 
 @dataclass
@@ -133,68 +109,43 @@ class SearchResult:
     title: str
     snippet: str
     score: float
-    club_keywords_snippet: list[str] = field(default_factory=list)
-    ttrpg_keywords_snippet: list[str] = field(default_factory=list)
-    club_keywords_text: list[str] = field(default_factory=list)
-    ttrpg_keywords_text: list[str] = field(default_factory=list)
     raw_content: str = ""
     raw_content_error: str = ""
     status: str = ""
 
     @classmethod
-    def from_tavily(
-        cls, query: str, result: dict, ttrpg_kw: list[str], club_kw: list[str]
-    ) -> SearchResult | None:
+    def from_tavily(cls, query: str, result: dict) -> SearchResult | None:
         url = result.get("url", "")
         if not url:
             return None
-        title = sanitize_for_csv(result.get("title", ""))
-        snippet = sanitize_for_csv(result.get("content", "") or "")
-        haystack = f"{title} {snippet}"
         return cls(
             query=query,
             url=url,
-            title=title,
-            snippet=snippet,
+            title=sanitize_for_csv(result.get("title", "")),
+            snippet=sanitize_for_csv(result.get("content", "") or ""),
             score=result.get("score", 0.0),
-            club_keywords_snippet=find_keywords(haystack, club_kw),
-            ttrpg_keywords_snippet=find_keywords(haystack, ttrpg_kw),
         )
-
-    def scan_text(self, ttrpg_kw: list[str], club_kw: list[str]) -> None:
-        """Record what each list matched in the extracted page.
-
-        Left empty unless extraction actually returned text, so a blank column
-        means "not measured", never "measured and found nothing".
-        """
-        self.club_keywords_text = find_keywords(self.raw_content, club_kw)
-        self.ttrpg_keywords_text = find_keywords(self.raw_content, ttrpg_kw)
 
     def to_csv_row(self) -> dict:
         return {
             "search_query": self.query,
             "result_url": self.url,
             "result_title": self.title,
-            "result_snippet": self.snippet[:SNIPPET_CHARS],
+            "result_snippet": self.snippet,
             "result_score": self.score,
-            "club_keywords_found_in_snippet": "; ".join(self.club_keywords_snippet),
-            "ttrpg_keywords_found_in_snippet": "; ".join(self.ttrpg_keywords_snippet),
-            "club_keywords_found_in_text": "; ".join(self.club_keywords_text),
-            "ttrpg_keywords_found_in_text": "; ".join(self.ttrpg_keywords_text),
             "raw_content_status": self.status,
             "raw_content_error": self.raw_content_error,
             # TODO: the full run should not carry whole pages in this column —
             # it is the bulk of the file size and nothing downstream of stage 2
             # needs it. Written in full only so the current test runs can be
-            # eyeballed against the keyword and contact columns.
+            # eyeballed.
             "result_raw_content": self.raw_content,
             "raw_content_length": len(self.raw_content),
         }
 
 
 def search_college(
-    name: str, ttrpg_kw: list[str], club_kw: list[str],
-    query_templates: list[str], excluded_domains: list[str],
+    name: str, query_templates: list[str], excluded_domains: list[str],
 ) -> tuple[list[SearchResult], list[SearchError]]:
     """Run every query template for one college, de-duplicated by URL.
 
@@ -226,7 +177,7 @@ def search_college(
 
         for raw in response.get("results", []):
             n_raw += 1
-            result = SearchResult.from_tavily(query, raw, ttrpg_kw, club_kw)
+            result = SearchResult.from_tavily(query, raw)
             if not result:
                 continue
             # A URL can surface from more than one query template with a
@@ -251,9 +202,6 @@ def search_college(
     )
     if selected:
         extract_raw_content(name, results, [r.url for r in selected])
-        for result in selected:
-            if result.status == Status.SUCCEEDED:
-                result.scan_text(ttrpg_kw, club_kw)
 
     return list(results.values()), errors
 
@@ -312,13 +260,11 @@ def log_raw_content_preview(name: str, results: list[SearchResult]) -> None:
             logger.debug(
                 "%s: raw_content preview for %s (%d chars): %r",
                 name, result.url, len(result.raw_content),
-                result.raw_content[:SNIPPET_CHARS],
+                result.raw_content,
             )
 
 
-def main(input_csv: str = DEFAULT_INPUT_CSV, output_csv: str = DEFAULT_RESULTS_CSV) -> None:
-    ttrpg_kw = load_word_list(TTRPG_KEYWORDS_PATH)
-    club_kw = load_word_list(CLUB_KEYWORDS_PATH)
+def main(input_csv: str = DEFAULT_INPUT_CSV, output_csv: str = DEFAULT_CANDIDATES_CSV) -> None:
     query_templates = load_query_templates(QUERY_TEMPLATES_PATH)
     excluded_domains = load_word_list(EXCLUDED_DOMAINS_PATH)
 
@@ -327,15 +273,13 @@ def main(input_csv: str = DEFAULT_INPUT_CSV, output_csv: str = DEFAULT_RESULTS_C
 
         reader = csv.DictReader(f_in)
         writer = csv.DictWriter(
-            f_out, fieldnames=reader.fieldnames + NEW_FIELDNAMES
+            f_out, fieldnames=list(reader.fieldnames) + NEW_FIELDNAMES if reader.fieldnames is not None else NEW_FIELDNAMES
         )
         writer.writeheader()
 
         for index, row in enumerate(reader):
             name = row["college_name"]
-            results, errors = search_college(
-                name, ttrpg_kw, club_kw, query_templates, excluded_domains
-            )
+            results, errors = search_college(name, query_templates, excluded_domains)
 
             if index < RAW_CONTENT_PREVIEW_COUNT:
                 log_raw_content_preview(name, results)
