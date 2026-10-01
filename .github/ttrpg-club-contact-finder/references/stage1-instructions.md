@@ -9,6 +9,7 @@ Tavily search + extract, one row per search result per college, except for senti
 1. **`website` (IPEDS official site) is not a domain filter.** Club pages routinely live off that domain.
 2. **Vendor-hosted club pages.** Many clubs live on platforms like CampusGroups, Modern Campus Involve, Anthology Engage, Corq, or Lounge, not the university's own domain. This is why extraction must not be restricted to `.edu`. (Detecting these pages by header markers like "Powered by CampusGroups" is a classification signal, not a fetch concern — see Stage 2.)
 3. **Multi-campus systems** (SUNY, UC, Penn State) — search queries search for campuses (e.g. Tricoci University of Beauty Culture-Elgin) rather than specific institutions. This allows for us to look for clubs that may only exist on a specific campus.
+4. **Must check full results.** Even if we see an email, Discord, or other contact signal in the snippet, we still need to check the full result. For example, conglam pages can surface an email address in the snippet, but the email can be for a different club.
 
 ## Tavily notes
 
