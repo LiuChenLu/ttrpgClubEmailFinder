@@ -7,7 +7,7 @@ description: Domain knowledge and pitfalls for the TTRPG-club contact-finding pr
 
 ## Goal
 
-Build a CSV of TTRPG/gaming club contacts across US colleges (~6,000). One row per club: **college name, contact info, source webpage, reason we believe it's correct.** The pipeline only gathers signals — "is this really a club page" is decided downstream (human/LLM), not by any current gate.
+Build a CSV of TTRPG/gaming club contacts across US colleges (~6,000). One row per club: **college name, contact info, source webpage, reason we believe it's correct.** The pipeline only gathers signals — "is this really a club page" is decided downstream (human/LLM).
 
 ## Pipeline
 
