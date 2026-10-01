@@ -14,7 +14,7 @@ from __future__ import annotations
 import csv
 import re
 
-from config import DEFAULT_CONTACTS_CSV, DEFAULT_RESULTS_CSV
+from config import DEFAULT_CONTACTS_CSV, DEFAULT_FILTERED_CSV
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}")
 DISCORD_RE = re.compile(r"(?:discord\.gg|discord\.com/invite)/[A-Za-z0-9-]+")
@@ -74,7 +74,7 @@ def contact_columns(raw_content: str, snippet: str) -> dict:
 
 
 def main(
-    input_csv: str = DEFAULT_RESULTS_CSV, output_csv: str = DEFAULT_CONTACTS_CSV
+    input_csv: str = DEFAULT_FILTERED_CSV, output_csv: str = DEFAULT_CONTACTS_CSV
 ) -> None:
     with open(input_csv, newline="", encoding="utf-8") as f_in, \
          open(output_csv, "w", newline="", encoding="utf-8") as f_out:
