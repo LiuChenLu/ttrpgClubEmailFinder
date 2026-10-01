@@ -11,6 +11,37 @@ Tavily search + extract, one row per search result per college, except for senti
 3. **Multi-campus systems** (SUNY, UC, Penn State) — search queries search for campuses (e.g. Tricoci University of Beauty Culture-Elgin) rather than specific institutions. This allows for us to look for clubs that may only exist on a specific campus.
 4. **Must check full results.** Even if we see an email, Discord, or other contact signal in the snippet, we still need to check the full result. For example, conglam pages can surface an email address in the snippet, but the email can be for a different club.
 
+## Sentinel rows
+
+Besides one row per search result, `main()` writes sentinel rows when Tavily errors.
+
+Here are two types of errors:
+
+| Type | Written when | `search_query` | `result_title` | `result_url` |
+| --- | --- | --- | --- | --- |
+| Query error | A `tavily().search()` call raised. One row per failed query. | The failed query | `str(exception)` | `ERROR` |
+| No results | The college has no hits and no errors. One row per college. | `NO_RESULTS: ` + queries joined by `"; "` | blank | blank |
+
+Here are example rows that they would write:
+
+```csv
+100001,Smalltown Bible College,Smalltown,www.smalltownbible.edu,NO_RESULTS: Smalltown Bible College tabletop RPG club; Smalltown Bible College D&D club,,,,,,,,
+129020,University of Connecticut,Storrs,www.uconn.edu,UConn Dungeons and Dragons club,429 Too Many Requests: usage limit exceeded,ERROR,,,,,,
+```
+
+### Behavior
+
+- Within a college, error rows are written before real rows.
+- `NO_RESULTS` is suppressed if any query raised, even if the other queries returned nothing.
+- `from_tavily` drops hits without a `url`, so a college whose hits all lack one gets `NO_RESULTS`.
+- A failed fallback `extract()` is not a sentinel. It is recorded in `extract_status` on a real row.
+- Detection: `result_url == "ERROR"` marks an error row, and a `search_query` starting with `NO_RESULTS:` marks a no-results row. Real rows always have a non-blank `raw_content_status`.
+
+### Known gaps
+
+- Error text is stored in `result_title` and bypasses `sanitize_for_csv`.
+- The `NO_RESULTS` query list is packed into one string and is hard to parse back out.
+
 ## Tavily notes
 
 - `search()` runs per query template per college
