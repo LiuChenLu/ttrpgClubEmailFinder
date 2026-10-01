@@ -4,10 +4,16 @@
 
 Conservatively filters Stage 1's candidates by:
 
-1. Discarding results rows that don't contain any club-keyword OR ttrpg-keyword matches in the snippet, as defined in `club_keywords.txt` / `ttrpg_keywords.txt`
+1. Discarding results rows that don't contain any club-keyword OR ttrpg-keyword matches in the result title + snippet, as defined in `club_keywords.txt` / `ttrpg_keywords.txt`
 2. Discarding results rows that don't contain any club-keyword AND ttrpg-keyword matches in the full result, as defined in `club_keywords.txt` / `ttrpg_keywords.txt`
 
 Filtering is conservative by design — only discards on a clear negative signal; does **not** render a verdict on whether a result is really a club page. That's decided downstream in Stage 3.
+
+Note that we do not filter for institution keywords. As a result, a tabletop RPG club page for a local library, high school, gaming café, board game store, etc. may be found by a search for "UConn" and passed through to Stage 3. This is intentional because there is no reliable way to identify an institution's club page:
+
+1. Club pages do not always use .edu domains. For example, Skidmore College hosts its club page at [skidmore.campuslab.com](https://skidmore.campuslabs.com/engage/organization/tabletop-gaming-club).
+2. The institution's name may not appear on the club page. For example, [UConn's club page](https://uconntact.uconn.edu/organization/tabletop_gaming_club) contains only variations of "UConn" in its text. There is no reliable way to determine an institution's nickname or abbreviation.
+3. Club pages may contain no vocabulary identifying the institution. The UConn page does not contain terms such as "college," "university," "institute," "undergraduate," "student," or "campus." The page assumes that readers already know it belongs to the university.
 
 ## Pitfalls to know before touching filtering logic
 
@@ -19,4 +25,4 @@ Filtering is conservative by design — only discards on a clear negative signal
 ## Open gaps
 
 - Vendor-platform special-casing and amalgam-page detection (pitfalls #3, #4): not implemented.
-- No fix yet for wrong-school attribution (pitfall #2) anywhere in the pipeline; alternative search APIs under investigation for Stage 1, LLM-based check planned for Stage 3.
+- No fix yet for wrong-schoo4bl attribution (pitfall #2) anywhere in the pipeline; alternative search APIs under investigation for Stage 1, LLM-based check planned for Stage 3.
