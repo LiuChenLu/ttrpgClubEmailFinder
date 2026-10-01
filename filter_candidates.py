@@ -1,22 +1,23 @@
 """Stage 2: record keyword signals for each Stage 1 candidate and decide keep/discard.
 
-Currently a pass-through stub: keyword hits are computed and written, and every
-row is kept. The discard rule is meant to be added inside decide().
+A row is kept only if it passes both gates:
+  - snippet gate: the result title + snippet hit at least one club OR ttrpg keyword.
+  - page gate: the extracted page text hits at least one club AND one ttrpg keyword.
 
-Two keyword tiers are recorded, neither of them a gate yet:
-  - snippet: what each list matched in the result title + snippet.
-  - page: what each list matched in the extracted page text.
+Discarded rows are still written (decision="discard") so the gates can be
+audited. NO_RESULTS/ERROR rows are always discarded.
 
 Reads only candidates.csv; needs no network access or API key.
 """
 
 from __future__ import annotations
+
+import csv
+
 from config import (
     CLUB_KEYWORDS_PATH, DEFAULT_CANDIDATES_CSV, DEFAULT_FILTERED_CSV,
     TTRPG_KEYWORDS_PATH, load_word_list,
 )
-
-import csv
 
 # Stage 1 writes whole pages into result_raw_content, which can exceed csv's
 # default 128 KB field limit and make the reader raise.
@@ -27,15 +28,30 @@ KEYWORD_FIELDNAMES = [
     "club_keywords_found_in_page", "ttrpg_keywords_found_in_page",
 ]
 
+# Column order of the Stage 2 table in pipeline_data_flow.md.
+FILTERED_FIELDNAMES = [
+    "decision", "unitid", "college_name", "city", "website",
+    "result_title", "result_url", "result_snippet",
+    "club_keywords_found_in_snippet", "ttrpg_keywords_found_in_snippet",
+    "result_raw_content",
+    "club_keywords_found_in_page", "ttrpg_keywords_found_in_page",
+    "raw_content_length",
+]
+
+# The columns copied through from candidates.csv.
+INPUT_FIELDNAMES = [
+    name for name in FILTERED_FIELDNAMES
+    if name != "decision" and name not in KEYWORD_FIELDNAMES
+]
+
 # TODO: special-case club hosting vendors, each identifiable from the page
 # source: CampusGroups ("Powered by CampusGroups"), Modern Campus Involve,
-# Anthology Engage, Lounge, Corq.
+# Anthology Engage, Lounge, Corq. This is a keep-signal, so it has to run
+# before the discard rules in decide().
 
-# TODO: detect when a URL is a directory of a university's clubs rather than
-# one specific club's page. These often rank well and mention plenty of
-# keywords (an A-Z list mentions "club" and often "tabletop"), but yield no
-# single club's contact info, so they need separating before anything
-# downstream treats a row as one club.
+# Directory pages (an A-Z list of a school's clubs) are deliberately kept: they
+# hit both keyword lists like any club page. Stage 3 splits out the individual
+# clubs, so Stage 2 doesn't need to detect them.
 
 
 def find_keywords(text: str, keywords: list[str]) -> list[str]:
@@ -43,10 +59,16 @@ def find_keywords(text: str, keywords: list[str]) -> list[str]:
     return [kw for kw in keywords if kw in lowered]
 
 
+def is_sentinel(row: dict) -> bool:
+    # NO_RESULTS rows have a blank result_url; ERROR rows have "ERROR" there
+    # and hold the exception message in result_title.
+    return row["result_url"] in ("", "ERROR")
+
+
 def keyword_columns(row: dict, ttrpg_kw: list[str], club_kw: list[str]) -> dict:
-    # NO_RESULTS and ERROR rows aren't pages, and ERROR rows hold the exception
-    # message in result_title, so it must not be scanned as if it were a title.
-    if row["result_url"] in ("", "ERROR"):
+    # Sentinel rows aren't pages, so the exception message in an ERROR row's
+    # result_title must not be scanned as if it were a title.
+    if is_sentinel(row):
         return dict.fromkeys(KEYWORD_FIELDNAMES, "")
 
     snippet = f"{row['result_title']} {row['result_snippet']}"
@@ -59,8 +81,21 @@ def keyword_columns(row: dict, ttrpg_kw: list[str], club_kw: list[str]) -> dict:
     }
 
 
-def decide(row: dict) -> str:
-    return "keep"
+def decide(row: dict, keywords: dict) -> str:
+    if is_sentinel(row):
+        return "discard"
+
+    snippet_gate = (
+        keywords["club_keywords_found_in_snippet"]
+        or keywords["ttrpg_keywords_found_in_snippet"]
+    )
+    # Empty page text has no hits, so it fails this gate too: a failed extract
+    # leaves nothing to pull a contact from.
+    page_gate = (
+        keywords["club_keywords_found_in_page"]
+        and keywords["ttrpg_keywords_found_in_page"]
+    )
+    return "keep" if snippet_gate and page_gate else "discard"
 
 
 def main(
@@ -69,21 +104,26 @@ def main(
     ttrpg_kw = load_word_list(TTRPG_KEYWORDS_PATH)
     club_kw = load_word_list(CLUB_KEYWORDS_PATH)
 
-    with open(input_csv, newline="", encoding="utf-8") as f_in, \
-            open(output_csv, "w", newline="", encoding="utf-8") as f_out:
-
+    with open(input_csv, newline="", encoding="utf-8") as f_in:
         reader = csv.DictReader(f_in)
-        writer = csv.DictWriter(
-            f_out, fieldnames=["decision"] + (list(reader.fieldnames) + KEYWORD_FIELDNAMES if reader.fieldnames is not None else KEYWORD_FIELDNAMES)
-        )
-        writer.writeheader()
 
-        for row in reader:
-            writer.writerow({
-                **row,
-                "decision": decide(row),
-                **keyword_columns(row, ttrpg_kw, club_kw),
-            })
+        # Checked before the output file is opened, so a bad input can't
+        # truncate a previous good output.
+        missing = set(INPUT_FIELDNAMES) - set(reader.fieldnames or [])
+        if missing:
+            raise ValueError(f"{input_csv} is missing columns: {sorted(missing)}")
+
+        with open(output_csv, "w", newline="", encoding="utf-8") as f_out:
+            # Input columns outside FILTERED_FIELDNAMES (search_query,
+            # result_score, ...) are dropped.
+            writer = csv.DictWriter(
+                f_out, fieldnames=FILTERED_FIELDNAMES, extrasaction="ignore"
+            )
+            writer.writeheader()
+
+            for row in reader:
+                keywords = keyword_columns(row, ttrpg_kw, club_kw)
+                writer.writerow({**row, **keywords, "decision": decide(row, keywords)})
 
 
 if __name__ == "__main__":
