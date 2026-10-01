@@ -1,11 +1,11 @@
 """Stage 1: search for candidate TTRPG club pages and record the raw results.
 
-For each college we run every query template through Tavily, de-duplicate hits
-by URL (keeping the higher score when a URL recurs across templates), and
-fetch the page text for the top-scoring candidates (see
-MAX_CANDIDATES_PER_COLLEGE). Every search hit gets a row whether or not it was
-extracted; columns that don't apply are left blank. Every input column is
-carried onto each output row, so later stages never need to join back to it.
+For each college we run every query template through Tavily, asking for each
+hit's page text, and de-duplicate hits by URL. Hits that came back with no page
+text get a fallback extract(). Every search hit gets a row whether or not its
+text was found; columns that don't apply are left blank. Input columns (except
+DROPPED_INPUT_COLUMNS) are carried onto each output row, so later stages never
+need to join back to it.
 
 This makes no judgement about whether a result is a club page and computes no
 keyword signals. filter_candidates.py reads this CSV and does that offline.
@@ -20,8 +20,10 @@ diagnostics, and a raw_content preview for the first few colleges.
 
 from __future__ import annotations
 from config import (
-    DEFAULT_CANDIDATES_CSV, DEFAULT_INPUT_CSV, EXCLUDED_DOMAINS_PATH,
-    MAX_RESULTS_PER_QUERY, QUERY_TEMPLATES_PATH, RAW_CONTENT_PREVIEW_COUNT,
+    DEFAULT_CANDIDATES_CSV, DEFAULT_INPUT_CSV, DROPPED_INPUT_COLUMNS,
+    EXCLUDED_DOMAINS_PATH, EXTRACT_DEPTH, EXTRACT_MAX_ATTEMPTS,
+    EXTRACT_RETRY_SLEEP_S, MAX_RESULTS_PER_QUERY, QUERY_TEMPLATES_PATH,
+    RAW_CONTENT_FORMAT, RAW_CONTENT_PREVIEW_COUNT, SEARCH_COUNTRY,
     SEARCH_DEPTH, SLEEP_BETWEEN_COLLEGES_S,
     load_query_templates, load_word_list,
 )
@@ -32,7 +34,7 @@ import logging
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 from tavily import TavilyClient
@@ -40,16 +42,15 @@ from tavily import TavilyClient
 load_dotenv()
 
 
-DEBUG = bool(os.environ.get("TTRPG_DEBUG"))
+DEBUG = os.environ.get("TTRPG_DEBUG") == "1"
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 logger = logging.getLogger("fetch_candidates")
 logger.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
 
-# No score floor gates extraction — every college with at least one search hit
-# gets up to this many of its highest-scoring results fetched in full,
-# regardless of how weak the best of them looks.
-MAX_CANDIDATES_PER_COLLEGE = 3
+# Page text can exceed csv's default 128 KB field limit when read back.
+# 2**31 - 1 is the largest value that doesn't overflow on Windows.
+csv.field_size_limit(2**31 - 1)
 
 # Control chars (NULs turn up in scraped text) make strict CSV parsers truncate
 # or refuse the file, and a bare \r inside a quoted field is mis-parsed by some
@@ -59,23 +60,38 @@ MAX_CANDIDATES_PER_COLLEGE = 3
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
-class Status:
-    """Why a row has no raw_content. Exactly one value applies per result row."""
+class RawStatus:
+    """What the search call returned as a hit's page text."""
 
-    NOT_TOP_CANDIDATE = "not_attempted_not_top_candidate"
-    EXCEPTION = "attempt_failed_exception"
-    PER_URL_FAILED = "attempt_failed_per_url"
-    NO_RESPONSE_ENTRY = "attempt_no_response_entry"
-    SUCCEEDED_EMPTY = "attempt_succeeded_empty"
-    SUCCEEDED = "attempt_succeeded"
+    SUCCEEDED = "succeeded"
+    EMPTY = "empty"      # "" or whitespace only
+    MISSING = "missing"  # null or absent
 
+
+class ExtractStatus:
+    """Outcome of the fallback extract(); the last attempt's result is kept."""
+
+    NOT_NEEDED = "not_needed"
+    SUCCEEDED = "succeeded"
+    SUCCEEDED_EMPTY = "succeeded_empty"
+    FAILED_PER_URL = "failed_per_url"
+    FAILED_EXCEPTION = "failed_exception"
+    NO_RESPONSE_ENTRY = "no_response_entry"
+
+
+# An extract that succeeds with empty text means the page itself is empty, so
+# retrying it just burns calls. Only failures are worth another attempt.
+RETRYABLE = {
+    ExtractStatus.FAILED_PER_URL,
+    ExtractStatus.FAILED_EXCEPTION,
+    ExtractStatus.NO_RESPONSE_ENTRY,
+}
 
 # Columns this stage adds. The input CSV's own columns are prepended in main().
 NEW_FIELDNAMES = [
-    "search_query",
-    "result_url", "result_title", "result_snippet", "result_score",
-    "raw_content_status", "raw_content_error",
-    "result_raw_content", "raw_content_length",
+    "search_query", "result_title", "result_url", "result_score",
+    "result_snippet", "raw_content_status", "extract_status",
+    "raw_content_length", "result_raw_content",
 ]
 
 
@@ -107,40 +123,71 @@ class SearchResult:
     query: str
     url: str
     title: str
-    snippet: str
     score: float
+    snippets: list[str] = field(default_factory=list)
     raw_content: str = ""
-    raw_content_error: str = ""
-    status: str = ""
+    raw_content_status: str = RawStatus.MISSING
+    extract_status: str = ExtractStatus.NOT_NEEDED
 
     @classmethod
     def from_tavily(cls, query: str, result: dict) -> SearchResult | None:
         url = result.get("url", "")
         if not url:
             return None
+        snippet = sanitize_for_csv(result.get("content", "") or "")
+        raw = result.get("raw_content")
+        text = sanitize_for_csv(raw or "")
+        if raw is None:
+            status = RawStatus.MISSING
+        elif not text.strip():
+            status = RawStatus.EMPTY
+        else:
+            status = RawStatus.SUCCEEDED
         return cls(
             query=query,
             url=url,
             title=sanitize_for_csv(result.get("title", "")),
-            snippet=sanitize_for_csv(result.get("content", "") or ""),
             score=result.get("score", 0.0),
+            snippets=[snippet] if snippet else [],
+            raw_content=text if status == RawStatus.SUCCEEDED else "",
+            raw_content_status=status,
+        )
+
+    def merge(self, other: SearchResult) -> SearchResult:
+        """Combine two hits for the same URL.
+
+        Query, title and score come from the higher-scoring hit, so they
+        describe the best evidence for the page. Snippets differ between
+        queries and filter_candidates.py looks for keywords in any of them, so
+        all are kept.
+        """
+        best = other if other.score > self.score else self
+        has_text = other if other.raw_content and not self.raw_content else self
+        return SearchResult(
+            query=best.query,
+            url=self.url,
+            title=best.title,
+            score=best.score,
+            snippets=self.snippets + [s for s in other.snippets if s not in self.snippets],
+            raw_content=has_text.raw_content,
+            raw_content_status=has_text.raw_content_status,
         )
 
     def to_csv_row(self) -> dict:
         return {
             "search_query": self.query,
-            "result_url": self.url,
             "result_title": self.title,
-            "result_snippet": self.snippet,
+            "result_url": self.url,
             "result_score": self.score,
-            "raw_content_status": self.status,
-            "raw_content_error": self.raw_content_error,
+            "result_snippet": "\n\n".join(self.snippets),
+            "raw_content_status": self.raw_content_status,
+            "extract_status": self.extract_status,
+            "raw_content_length": len(self.raw_content),
             # TODO: the full run should not carry whole pages in this column —
             # it is the bulk of the file size and nothing downstream of stage 2
             # needs it. Written in full only so the current test runs can be
             # eyeballed.
             "result_raw_content": self.raw_content,
-            "raw_content_length": len(self.raw_content),
         }
 
 
@@ -149,13 +196,8 @@ def search_college(
 ) -> tuple[list[SearchResult], list[SearchError]]:
     """Run every query template for one college, de-duplicated by URL.
 
-    When a URL comes back from more than one template, the higher-scoring hit
-    wins — see the loop below.
-
-    Page text is fetched only for the MAX_CANDIDATES_PER_COLLEGE
-    highest-scoring results, via a separate extract() call rather than
-    include_raw_content on every hit, so we don't pay extraction cost for
-    every result a college's queries turn up.
+    Page text arrives with each hit; any hit without it gets a fallback
+    extract(). There is no quality filter here — Stage 2 makes that call.
     """
     results: dict[str, SearchResult] = {}
     errors: list[SearchError] = []
@@ -168,6 +210,8 @@ def search_college(
                 query=query,
                 max_results=MAX_RESULTS_PER_QUERY,
                 search_depth=SEARCH_DEPTH,
+                country=SEARCH_COUNTRY,
+                include_raw_content=RAW_CONTENT_FORMAT,
                 exclude_domains=excluded_domains,
             )
         except Exception as e:
@@ -177,84 +221,68 @@ def search_college(
 
         for raw in response.get("results", []):
             n_raw += 1
-            result = SearchResult.from_tavily(query, raw)
-            if not result:
-                continue
-            # A URL can surface from more than one query template with a
-            # different score/snippet each time. Keep the higher-scoring hit
-            # rather than whichever template happened to run first, so
-            # result_score reflects the best evidence we have for that page.
-            existing = results.get(result.url)
-            if existing is None or result.score > existing.score:
-                results[result.url] = result
+            hit = SearchResult.from_tavily(query, raw)
+            if hit:
+                existing = results.get(hit.url)
+                results[hit.url] = existing.merge(hit) if existing else hit
 
-    selected = sorted(
-        results.values(), key=lambda r: r.score, reverse=True
-    )[:MAX_CANDIDATES_PER_COLLEGE]
-    selected_urls = {r.url for r in selected}
-    for result in results.values():
-        if result.url not in selected_urls:
-            result.status = Status.NOT_TOP_CANDIDATE
-
+    blank = [r for r in results.values() if not r.raw_content]
     logger.debug(
-        "%s: %d raw -> %d deduped -> %d selected as candidates",
-        name, n_raw, len(results), len(selected),
+        "%s: %d raw -> %d deduped -> %d need extract",
+        name, n_raw, len(results), len(blank),
     )
-    if selected:
-        extract_raw_content(name, results, [r.url for r in selected])
+    for result in blank:
+        logger.debug(
+            "%s: search returned %s page text for %s",
+            name, result.raw_content_status, result.url,
+        )
+        extract_raw_content(result)
 
     return list(results.values()), errors
 
 
-def extract_raw_content(
-    name: str, results: dict[str, SearchResult], urls: list[str]
-) -> None:
-    """Fetch page text for `urls`, updating those results in place.
-
-    A failed extraction doesn't invalidate the search hit, so affected rows keep
-    an empty raw_content but record why via status/raw_content_error.
-    """
+def extract_once(url: str) -> tuple[str, str]:
+    """One extract() call for one URL. Returns (status, page text)."""
     try:
-        response = tavily().extract(urls=urls, format="text")
+        response = tavily().extract(
+            urls=[url], format=RAW_CONTENT_FORMAT, extract_depth=EXTRACT_DEPTH,
+        )
     except Exception as e:
-        logger.debug("%s: extract() raised for all %d URLs: %s", name, len(urls), e)
-        for url in urls:
-            results[url].status = Status.EXCEPTION
-            results[url].raw_content_error = str(e)
-        return
+        logger.debug("extract() raised for %s: %s", url, e)
+        return ExtractStatus.FAILED_EXCEPTION, ""
 
-    answered = set()
-    for extracted in response.get("results", []):
-        url = extracted.get("url", "")
-        if url in results:
-            content = sanitize_for_csv(extracted.get("raw_content", "") or "")
-            results[url].raw_content = content
-            results[url].status = Status.SUCCEEDED if content else Status.SUCCEEDED_EMPTY
-            answered.add(url)
+    # One URL per call, so any entry is ours. Tavily may normalise the URL it
+    # echoes back, which is why we don't match on it.
+    if response.get("results"):
+        text = sanitize_for_csv(response["results"][0].get("raw_content") or "")
+        if text.strip():
+            return ExtractStatus.SUCCEEDED, text
+        return ExtractStatus.SUCCEEDED_EMPTY, ""
 
-    # Tavily reports per-URL failures here rather than raising; without reading
-    # this list they're indistinguishable from "never attempted".
-    failed = response.get("failed_results", [])
-    for entry in failed:
-        url = entry.get("url", "")
-        if url in results:
-            results[url].status = Status.PER_URL_FAILED
-            results[url].raw_content_error = entry.get("error", "")
-            answered.add(url)
+    # Tavily reports per-URL failures here rather than raising.
+    if response.get("failed_results"):
+        error = response["failed_results"][0].get("error", "")
+        logger.debug("extract() failed for %s: %s", url, error)
+        return ExtractStatus.FAILED_PER_URL, ""
 
-    # Shouldn't happen, but don't silently drop a URL Tavily never mentions.
-    for url in urls:
-        if url not in answered:
-            results[url].status = Status.NO_RESPONSE_ENTRY
-
-    logger.debug(
-        "%s: extract() requested %d, %d returned, %d failed%s",
-        name, len(urls), len(response.get("results", [])), len(failed),
-        f": {failed}" if failed else "",
-    )
+    return ExtractStatus.NO_RESPONSE_ENTRY, ""
 
 
-def log_raw_content_preview(name: str, results: list[SearchResult]) -> None:
+def extract_raw_content(result: SearchResult) -> None:
+    """Fill in a result's page text, retrying failed extracts.
+
+    After the last attempt the row keeps empty text and records why in
+    extract_status; a failed extraction doesn't invalidate the search hit.
+    """
+    for attempt in range(EXTRACT_MAX_ATTEMPTS):
+        if attempt:
+            time.sleep(EXTRACT_RETRY_SLEEP_S)
+        result.extract_status, result.raw_content = extract_once(result.url)
+        if result.extract_status not in RETRYABLE:
+            return
+
+
+def log_raw_content(name: str, results: list[SearchResult]) -> None:
     for result in results:
         if result.raw_content:
             logger.debug(
@@ -272,34 +300,34 @@ def main(input_csv: str = DEFAULT_INPUT_CSV, output_csv: str = DEFAULT_CANDIDATE
             open(output_csv, "w", newline="", encoding="utf-8") as f_out:
 
         reader = csv.DictReader(f_in)
-        writer = csv.DictWriter(
-            f_out, fieldnames=list(reader.fieldnames) + NEW_FIELDNAMES if reader.fieldnames is not None else NEW_FIELDNAMES
-        )
+        carried = [c for c in reader.fieldnames or [] if c not in DROPPED_INPUT_COLUMNS]
+        writer = csv.DictWriter(f_out, fieldnames=carried + NEW_FIELDNAMES)
         writer.writeheader()
 
         for index, row in enumerate(reader):
             name = row["college_name"]
+            institution = {c: row[c] for c in carried}
             results, errors = search_college(name, query_templates, excluded_domains)
 
             if index < RAW_CONTENT_PREVIEW_COUNT:
-                log_raw_content_preview(name, results)
+                log_raw_content(name, results)
 
             if not results and not errors:
                 tried = "; ".join(t.format(name=name) for t in query_templates)
                 writer.writerow({
-                    **row,
+                    **institution,
                     "search_query": f"NO_RESULTS: {tried}",
                 })
 
             for error in errors:
                 writer.writerow({
-                    **row,
+                    **institution,
                     "search_query": error.query,
                     "result_url": "ERROR", "result_title": error.message,
                 })
 
             for result in results:
-                writer.writerow({**row, **result.to_csv_row()})
+                writer.writerow({**institution, **result.to_csv_row()})
 
             time.sleep(SLEEP_BETWEEN_COLLEGES_S)
 

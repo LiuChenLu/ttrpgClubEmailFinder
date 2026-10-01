@@ -30,6 +30,23 @@ MAX_RESULTS_PER_QUERY = 10
 # advanced is the most relevant at 2 credits.
 SEARCH_DEPTH = "advanced"
 
+# Tavily only honors this when the search topic is "general" (its default).
+SEARCH_COUNTRY = "united states"
+
+# Page-text format for both the search hit's raw_content and the fallback
+# extract(), so the result_raw_content column never mixes formats.
+RAW_CONTENT_FORMAT = "markdown"
+
+# Hits that come back with no page text get a per-URL extract(). Only failures
+# are retried; an extract that succeeds with empty text is final. "advanced"
+# costs 2x basic but renders JS-heavy pages.
+EXTRACT_DEPTH = "basic"
+EXTRACT_MAX_ATTEMPTS = 3
+EXTRACT_RETRY_SLEEP_S = 2
+
+# Input columns that are not copied onto candidates.csv rows.
+DROPPED_INPUT_COLUMNS = ["distance"]
+
 SLEEP_BETWEEN_COLLEGES_S = 0.2
 
 # How many colleges (in input order) get a raw_content preview logged. Enough
