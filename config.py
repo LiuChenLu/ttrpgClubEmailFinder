@@ -17,6 +17,13 @@ DEFAULT_CANDIDATES_CSV = "./data/candidates.csv"
 DEFAULT_FILTERED_CSV = "./data/filtered_candidates.csv"
 DEFAULT_CONTACTS_CSV = "./data/ttrpg_clubs_contacts.csv"
 
+# --- institutions (stage 0) -------------------------------------------------
+ 
+# One term per line, matched case-insensitively as substrings against the
+# institution name. Drops school types that won't have a TTRPG club (beauty,
+# cosmetology, etc.).
+EXCLUDED_INSTITUTION_NAMES_PATH = "./config/excluded_institution_names.txt"
+
 # --- search ------------------------------------------------------------
 
 # One template per line, each containing a {name} placeholder substituted with

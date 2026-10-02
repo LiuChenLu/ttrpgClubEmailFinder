@@ -1,0 +1,10 @@
+hair
+beauty
+nail
+cosmetology
+skin
+barber
+makeup
+esthetic
+aesthetic
+massage

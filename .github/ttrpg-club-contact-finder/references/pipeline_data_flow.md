@@ -2,7 +2,7 @@
 
 ## Stage 0 — `build_institution_dataset.py` output institutions.csv
 
-Stage 0 pulls only the relevant columns from the IPEDS database and writes them to a CSV. This stage also filter out institutions that do not have an .edu website registered on ipeds, as insitutions that do not have such an official website are likely too small to be worth searching.
+Stage 0 pulls only the relevant columns from the IPEDS database and writes them to a CSV. This stage also filter out institutions that do not have an .edu website registered on ipeds, as insitutions that do not have such an official website are likely too small to be worth searching. It also filters out institutions whose name contains a term from config/excluded_institution_names.txt (beauty and cosmetology schools).
 
 Each row represents an IPEDS institution.
 

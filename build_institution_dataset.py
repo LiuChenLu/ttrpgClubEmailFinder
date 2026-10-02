@@ -9,6 +9,8 @@ import csv
 import io
 from math import radians, sin, cos, asin, sqrt
 
+from config import EXCLUDED_INSTITUTION_NAMES_PATH, load_word_list
+
 INPUT_DATA_PATH = Path("./data/ipeds/IPEDS_2024-25_Provisional/IPEDS202425.accdb")
 OUTPUT_DATA_PATH = Path("./data/institutions.csv")
 HARTFORD_LATITUDE = 41.763710
@@ -32,6 +34,12 @@ def distance(lat1, lon1, lat2, lon2):
 def has_edu_webaddr(webaddr: str) -> bool:
     """Return True if webaddr is non-empty and contains '.edu' as a substring."""
     return bool(webaddr) and ".edu" in webaddr.lower()
+
+
+def has_excluded_name(name: str, excluded_terms: list[str]) -> bool:
+    """Return True if name contains any excluded term, case-insensitively."""
+    lowered = name.lower()
+    return any(term in lowered for term in excluded_terms)
 
 
 def read_ipeds():
@@ -73,6 +81,14 @@ def process_ipeds(df):
     if dropped:
         print(f"Dropping {dropped} institution(s) without a .edu WEBADDR")
     result = result[edu_mask]
+
+    excluded_terms = load_word_list(EXCLUDED_INSTITUTION_NAMES_PATH)
+    excluded_mask = result["INSTNM"].fillna("").apply(
+        has_excluded_name, args=(excluded_terms,)
+    )
+    if excluded_mask.any():
+        print(f"Dropping {int(excluded_mask.sum())} institution(s) with an excluded name")
+    result = result[~excluded_mask]
 
     coords_mask = result["LONGITUD"].notna() & result["LATITUDE"].notna()
     result["DISTANCE"] = pd.NA
