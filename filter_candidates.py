@@ -29,6 +29,7 @@ KEYWORD_FIELDNAMES = [
 ]
 
 # Column order of the Stage 2 table in pipeline_data_flow.md.
+# TODO pass along content_source from input csv as well
 FILTERED_FIELDNAMES = [
     "decision", "unitid", "college_name", "city", "website",
     "result_title", "result_url", "result_snippet",
