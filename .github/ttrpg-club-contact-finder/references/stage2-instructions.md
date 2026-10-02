@@ -30,3 +30,7 @@ Note that we do not filter for institution keywords. As a result, a tabletop RPG
 
 - Vendor-platform special-casing and amalgam-page detection (pitfalls #3, #4): not implemented.
 - No fix yet for wrong-school attribution (pitfall #2) anywhere in the pipeline; alternative search APIs under investigation for Stage 1a, LLM-based check planned for Stage 3.
+
+# New TODOs
+- We want to plumb `content_source` through to Stage 3, but it's not in the CSV yet.
+- We want to deduplicate urls across institutions to catch duplicate clubs from colleges that have multiple campuses. 
