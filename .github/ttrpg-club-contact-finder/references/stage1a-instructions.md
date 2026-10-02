@@ -28,8 +28,8 @@ Here are two types of errors:
 Here are example rows that they would write:
 
 ```csv
-100001,Smalltown Bible College,Smalltown,www.smalltownbible.edu,NO_RESULTS: Smalltown Bible College tabletop RPG club; Smalltown Bible College D&D club,,,,,,,,
-129020,University of Connecticut,Storrs,www.uconn.edu,UConn Dungeons and Dragons club,429 Too Many Requests: usage limit exceeded,ERROR,,,,,,
+100001,Smalltown Bible College,Smalltown,www.smalltownbible.edu,NO_RESULTS: Smalltown Bible College tabletop RPG club; Smalltown Bible College D&D club,,,,,,,
+129020,University of Connecticut,Storrs,www.uconn.edu,UConn Dungeons and Dragons club,429 Too Many Requests: usage limit exceeded,ERROR,,,,,
 ```
 
 ### Behavior
