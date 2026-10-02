@@ -28,7 +28,7 @@ Extract and Playwright failures are recorded on the real row, never as sentinels
 - Headless Chromium; one attempt per URL, no retry; one page at a time.
 - `page.goto(url, wait_until="networkidle", timeout=PLAYWRIGHT_TIMEOUT_MS)`, with `PLAYWRIGHT_TIMEOUT_MS = 30_000`.
 - Stored as plain body text, not markdown, so hrefs behind link text (`mailto:`, Discord invites) are absent. Tavily content is markdown; downstream stages must check `content_source` rather than assume a format.
-- Playwright text replaces existing content only if it is non-empty and longer; otherwise the existing content is kept. A known weakness is that Tavily currently returns markdown, which could make a stubbed content look longer than Playwright's.
+- Playwright text replaces existing content only if it is non-empty and longer; otherwise the existing content is kept. A known weakness is that Tavily currently returns markdown, which could make a stubbed content look longer than Playwright's. If this is a problem, we could strip the markdown to plain text before writing to the CSV.
 - A timeout or any other Playwright error sets `render_status` to `failed_per_url` and keeps the existing content.
 - Requires `playwright install chromium` once.
 - Takes a few seconds to a few minutes per page.
