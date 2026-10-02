@@ -1,15 +1,18 @@
-# Stage 1 — `fetch_candidates.py`
+# Stage 1a — `fetch_candidates.py`
 
-**Output:** `data/candidates.csv`
+**Output:** `data/search_results.csv`
 
-Tavily search + extract, one row per search result per college, except for sentinel rows used to log error. It deduplicates the results returned for each college. When deduplicating, the snippets are appended together. This is because snippets are not guaranteed to be the same across multiple search queries, and we later look for keywords in any of the snippets.
+Tavily search only, one row per search result per college, except for sentinel rows used to log error. It deduplicates the results returned for each college. When deduplicating, the snippets are appended together. This is because snippets are not guaranteed to be the same across multiple search queries, and we later look for keywords in any of the snippets.
+
+Raw content comes from the search call (`include_raw_content`). [Stage 1b](stage1b-instructions.md) repairs blank or suspiciously short content.
 
 ## Pitfalls to know before touching search/fetch logic
 
 1. **`website` (IPEDS official site) is not a domain filter.** Club pages routinely live off that domain.
-2. **Vendor-hosted club pages.** Many clubs live on platforms like CampusGroups, Modern Campus Involve, Anthology Engage, Corq, or Lounge, not the university's own domain. This is why extraction must not be restricted to `.edu`. (Detecting these pages by header markers like "Powered by CampusGroups" is a classification signal, not a fetch concern — see Stage 2.)
+2. **Vendor-hosted club pages.** Many clubs live on platforms like CampusGroups, Modern Campus Involve, Anthology Engage, Corq, or Lounge, not the university's own domain. This is why fetching must not be restricted to `.edu`. The only `.edu` condition is Stage 1b's short-content trigger. (Detecting these pages by header markers like "Powered by CampusGroups" is a classification signal, not a fetch concern — see Stage 2.)
 3. **Multi-campus systems** (SUNY, UC, Penn State) — search queries search for campuses (e.g. Tricoci University of Beauty Culture-Elgin) rather than specific institutions. This allows for us to look for clubs that may only exist on a specific campus.
 4. **Must check full results.** Even if we see an email, Discord, or other contact signal in the snippet, we still need to check the full result. For example, conglam pages can surface an email address in the snippet, but the email can be for a different club.
+5. **JS-heavy pages come back blank or stubbed.** Tavily can't render pages like Anthology Engage (UConn and Skidmore return nothing; MIT's directory renders fine). Stage 1b handles these.
 
 ## Sentinel rows
 
@@ -34,7 +37,7 @@ Here are example rows that they would write:
 - Within a college, error rows are written before real rows.
 - `NO_RESULTS` is suppressed if any query raised, even if the other queries returned nothing.
 - `from_tavily` drops hits without a `url`, so a college whose hits all lack one gets `NO_RESULTS`.
-- A failed fallback `extract()` is not a sentinel. It is recorded in `extract_status` on a real row.
+- `extract()` and Playwright failures are never sentinels; Stage 1b records them in `extract_status` and `render_status` on real rows.
 - Detection: `result_url == "ERROR"` marks an error row, and a `search_query` starting with `NO_RESULTS:` marks a no-results row. Real rows always have a non-blank `raw_content_status`.
 
 ### Known gaps
@@ -49,7 +52,6 @@ Here are example rows that they would write:
   - `exclude_domains` filters generic social/wiki/review sites.
   - `country` is set to `"united states"` to boost content from the US.
   - `include_raw_content` is set to `True` for all fetches, which fetches the cleaned and parsed HTML content for each result.
-- A separate `extract()` fetches full text only for results where the raw_content failed to fetch. For simplicity, it fetches any results that failed to fetch the raw_content, even if they are low quality. We try to fetch 2 times with extract before leaving the field blank. This allows us to handle filtering all in one place in stage 2.
 - Track credit spend against budget before scaling up.
 - It may be worthwhile to implement retry logic for when Tavily fails to return a result — not yet implemented.
 
@@ -60,7 +62,7 @@ Here are example rows that they would write:
 
 ## Scale & budget
 
-Assuming a negligiable number of `extract` retries, ~4,000 colleges × 3 query templates × up to 3 extracts ≈ 12K searches + 12K extracts. Before a full run:
+~4,000 colleges × 3 query templates ≈ 12K searches. Before a full run:
 
 - Reconsider always using `SEARCH_DEPTH="advanced"` (2 credits) vs. a cheap `"basic"` first pass.
 - This script doesn't checkpoint/resume — add resumable writes so a mid-run failure doesn't require restarting from scratch.

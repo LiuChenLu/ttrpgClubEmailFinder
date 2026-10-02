@@ -1,11 +1,15 @@
 # Stage 2 — `filter_candidates.py`
 
+**Input:** `data/rendered_results.csv` (Stage 1b)
+
 **Output:** `data/filtered_candidates.csv`
 
-Conservatively filters Stage 1's candidates by:
+Conservatively filters Stage 1b's candidates by:
 
 1. Discarding results rows that don't contain any club-keyword OR ttrpg-keyword matches in the result title + snippet, as defined in `club_keywords.txt` / `ttrpg_keywords.txt`
 2. Discarding results rows that don't contain any club-keyword AND ttrpg-keyword matches in the full result, as defined in `club_keywords.txt` / `ttrpg_keywords.txt`
+
+`result_raw_content` is markdown (Tavily) or plain text (Playwright), per `content_source`. The keyword matching applies to both, and `content_source` is carried through to the output for Stage 3.
 
 Filtering is conservative by design — only discards on a clear negative signal; does **not** render a verdict on whether a result is really a club page. That's decided downstream in Stage 3.
 
@@ -25,4 +29,4 @@ Note that we do not filter for institution keywords. As a result, a tabletop RPG
 ## Open gaps
 
 - Vendor-platform special-casing and amalgam-page detection (pitfalls #3, #4): not implemented.
-- No fix yet for wrong-schoo4bl attribution (pitfall #2) anywhere in the pipeline; alternative search APIs under investigation for Stage 1, LLM-based check planned for Stage 3.
+- No fix yet for wrong-school attribution (pitfall #2) anywhere in the pipeline; alternative search APIs under investigation for Stage 1a, LLM-based check planned for Stage 3.
