@@ -10,11 +10,13 @@ HAS_TTRPG_CLUB_PATH = "./data/iped_institution_has_ttrpg_club.csv"
 RANDOM_COLLEGE_SAMEPLE = "./data/institutions_sample.csv"
 DEFAULT_INPUT_CSV = HAS_TTRPG_CLUB_PATH
 
-# Stage 1 (fetch_candidates.py) writes CANDIDATES; stage 2
-# (filter_candidates.py) reads it and writes FILTERED; stage 3
-# (extract_contact_info.py) reads FILTERED and writes CONTACTS.
-DEFAULT_CANDIDATES_CSV = "./data/candidates.csv"
+# Output of stage 1a
+SEARCH_RESULTS_CSV = "./data/search_results.csv"
+# Output of stage 1b
+RENDERED_RESULTS_CSV = "./data/rendered_results.csv"
+# Output of stage 2
 DEFAULT_FILTERED_CSV = "./data/filtered_candidates.csv"
+# Output of stage 3
 DEFAULT_CONTACTS_CSV = "./data/ttrpg_clubs_contacts.csv"
 
 # --- institutions (stage 0) -------------------------------------------------
@@ -40,18 +42,11 @@ SEARCH_DEPTH = "advanced"
 # Tavily only honors this when the search topic is "general" (its default).
 SEARCH_COUNTRY = "united states"
 
-# Page-text format for both the search hit's raw_content and the fallback
-# extract(), so the result_raw_content column never mixes formats.
+# Page-text format for both the search hit's raw_content and Stage 1b's
+# fallback extract().
 RAW_CONTENT_FORMAT = "markdown"
 
-# Hits that come back with no page text get a per-URL extract(). Only failures
-# are retried; an extract that succeeds with empty text is final. "advanced"
-# costs 2x basic but renders JS-heavy pages.
-EXTRACT_DEPTH = "basic"
-EXTRACT_MAX_ATTEMPTS = 3
-EXTRACT_RETRY_SLEEP_S = 2
-
-# Input columns that are not copied onto candidates.csv rows.
+# Input columns that are not copied onto search_results.csv rows.
 DROPPED_INPUT_COLUMNS = ["distance"]
 
 SLEEP_BETWEEN_COLLEGES_S = 0.2
@@ -59,6 +54,25 @@ SLEEP_BETWEEN_COLLEGES_S = 0.2
 # How many colleges (in input order) get a raw_content preview logged. Enough
 # to catch a JS/consent-wall stub early in a run without hundreds of log lines.
 RAW_CONTENT_PREVIEW_COUNT = 5
+
+# --- render (stage 1b) -------------------------------------------------------
+
+EXTRACT_DEPTH = "advanced"
+EXTRACT_MAX_ATTEMPTS = 2
+EXTRACT_RETRY_SLEEP_S = 2
+
+# Non-blank page text shorter than this on a .edu URL may be a JS stub, so it is
+# re-fetched with Playwright.
+SHORT_CONTENT_CHARS = 1000
+
+# Per-page limit for Playwright's goto() and inner_text().
+PLAYWRIGHT_TIMEOUT_MS = 30_000
+
+# Number of browser deaths in a row that abort the run. Each death relaunches
+# Chromium and marks that URL failed; without a cap, a systemic problem (out of
+# memory, a broken install) would silently mark every remaining row failed. A 
+# Playwright call that ends with the browser still alive resets the count.
+PLAYWRIGHT_MAX_CONSECUTIVE_CRASHES = 3
 
 # --- gating ----------------------------------------------------------------
 

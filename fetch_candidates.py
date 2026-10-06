@@ -1,45 +1,43 @@
-"""Stage 1: search for candidate TTRPG club pages and record the raw results.
+"""Stage 1a: search for candidate TTRPG club pages and record the raw results.
 
 For each college we run every query template through Tavily, asking for each
-hit's page text, and de-duplicate hits by URL. Hits that came back with no page
-text get a fallback extract(). Every search hit gets a row whether or not its
-text was found; columns that don't apply are left blank. Input columns (except
-DROPPED_INPUT_COLUMNS) are carried onto each output row, so later stages never
-need to join back to it.
+hit's page text, and de-duplicate hits by URL. Every search hit gets a row
+whether or not its text was found; columns that don't apply are left blank.
+Input columns (except DROPPED_INPUT_COLUMNS) are carried onto each output row,
+so later stages never need to join back to it.
+
+Page text comes from the search call only. Hits whose text came back blank or
+suspiciously short are repaired by render_candidates.py (Stage 1b), which
+re-fetches them with Tavily extract() and Playwright.
 
 This makes no judgement about whether a result is a club page and computes no
-keyword signals. filter_candidates.py reads this CSV and does that offline.
+keyword signals. filter_candidates.py reads Stage 1b's output and does that
+offline.
 
 Setup:
     pip install tavily-python python-dotenv
     Create .env with: TAVILY_API_KEY=tvly-... and TTRPG_DEBUG=0 or 1
 
-Set TTRPG_DEBUG=1 in .env for per-college funnel logging, extract()
-diagnostics, and a raw_content preview for the first few colleges.
+Set TTRPG_DEBUG=1 in .env for per-college funnel logging and a raw_content
+preview for the first few colleges.
 """
 
 from __future__ import annotations
 from config import (
-    DEFAULT_CANDIDATES_CSV, DEFAULT_INPUT_CSV, DROPPED_INPUT_COLUMNS,
-    EXCLUDED_DOMAINS_PATH, EXTRACT_DEPTH, EXTRACT_MAX_ATTEMPTS,
-    EXTRACT_RETRY_SLEEP_S, MAX_RESULTS_PER_QUERY, QUERY_TEMPLATES_PATH,
-    RAW_CONTENT_FORMAT, RAW_CONTENT_PREVIEW_COUNT, SEARCH_COUNTRY,
-    SEARCH_DEPTH, SLEEP_BETWEEN_COLLEGES_S,
+    DEFAULT_INPUT_CSV, DROPPED_INPUT_COLUMNS, EXCLUDED_DOMAINS_PATH,
+    MAX_RESULTS_PER_QUERY, QUERY_TEMPLATES_PATH, RAW_CONTENT_FORMAT,
+    RAW_CONTENT_PREVIEW_COUNT, SEARCH_COUNTRY, SEARCH_DEPTH,
+    SEARCH_RESULTS_CSV, SLEEP_BETWEEN_COLLEGES_S,
     load_query_templates, load_word_list,
 )
+from search_row_format_util import ERROR_URL, NO_RESULTS_PREFIX, sanitize_for_csv
+from tavily_client_util import tavily
 
 import csv
-import functools
 import logging
 import os
-import re
 import time
 from dataclasses import dataclass, field
-
-from dotenv import load_dotenv
-from tavily import TavilyClient
-
-load_dotenv()
 
 
 DEBUG = os.environ.get("TTRPG_DEBUG") == "1"
@@ -47,17 +45,6 @@ DEBUG = os.environ.get("TTRPG_DEBUG") == "1"
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 logger = logging.getLogger("fetch_candidates")
 logger.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
-
-# Page text can exceed csv's default 128 KB field limit when read back.
-# 2**31 - 1 is the largest value that doesn't overflow on Windows.
-csv.field_size_limit(2**31 - 1)
-
-# Control chars (NULs turn up in scraped text) make strict CSV parsers truncate
-# or refuse the file, and a bare \r inside a quoted field is mis-parsed by some
-# grid tools. Neither carries meaning, so drop/normalise them. Do NOT add any
-# other escaping here: csv already does RFC 4180 quoting and stacking our own
-# on top would double-escape the output.
-_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 class RawStatus:
@@ -68,44 +55,12 @@ class RawStatus:
     MISSING = "missing"  # null or absent
 
 
-class ExtractStatus:
-    """Outcome of the fallback extract(); the last attempt's result is kept."""
-
-    NOT_NEEDED = "not_needed"
-    SUCCEEDED = "succeeded"
-    SUCCEEDED_EMPTY = "succeeded_empty"
-    FAILED_PER_URL = "failed_per_url"
-    FAILED_EXCEPTION = "failed_exception"
-    NO_RESPONSE_ENTRY = "no_response_entry"
-
-
-# An extract that succeeds with empty text means the page itself is empty, so
-# retrying it just burns calls. Only failures are worth another attempt.
-RETRYABLE = {
-    ExtractStatus.FAILED_PER_URL,
-    ExtractStatus.FAILED_EXCEPTION,
-    ExtractStatus.NO_RESPONSE_ENTRY,
-}
-
 # Columns this stage adds. The input CSV's own columns are prepended in main().
 NEW_FIELDNAMES = [
     "search_query", "result_title", "result_url", "result_score",
-    "result_snippet", "raw_content_status", "extract_status",
-    "raw_content_length", "result_raw_content",
+    "result_snippet", "raw_content_status", "raw_content_length",
+    "result_raw_content",
 ]
-
-
-@functools.cache
-def tavily() -> TavilyClient:
-    """Built lazily so importing this module doesn't require the API key."""
-    return TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
-
-
-def sanitize_for_csv(text: str) -> str:
-    if not text:
-        return text
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    return _CONTROL_CHAR_RE.sub("", text)
 
 
 @dataclass
@@ -127,7 +82,6 @@ class SearchResult:
     snippets: list[str] = field(default_factory=list)
     raw_content: str = ""
     raw_content_status: str = RawStatus.MISSING
-    extract_status: str = ExtractStatus.NOT_NEEDED
 
     @classmethod
     def from_tavily(cls, query: str, result: dict) -> SearchResult | None:
@@ -181,7 +135,6 @@ class SearchResult:
             "result_score": self.score,
             "result_snippet": "\n\n".join(self.snippets),
             "raw_content_status": self.raw_content_status,
-            "extract_status": self.extract_status,
             "raw_content_length": len(self.raw_content),
             # TODO: the full run should not carry whole pages in this column —
             # it is the bulk of the file size and nothing downstream of stage 2
@@ -196,8 +149,9 @@ def search_college(
 ) -> tuple[list[SearchResult], list[SearchError]]:
     """Run every query template for one college, de-duplicated by URL.
 
-    Page text arrives with each hit; any hit without it gets a fallback
-    extract(). There is no quality filter here — Stage 2 makes that call.
+    Page text arrives with each hit; blank or suspiciously short text is left
+    for Stage 1b to repair. There is no quality filter here — Stage 2 makes
+    that call.
     """
     results: dict[str, SearchResult] = {}
     errors: list[SearchError] = []
@@ -228,7 +182,7 @@ def search_college(
 
     blank = [r for r in results.values() if not r.raw_content]
     logger.debug(
-        "%s: %d raw -> %d deduped -> %d need extract",
+        "%s: %d raw -> %d deduped -> %d with blank page text",
         name, n_raw, len(results), len(blank),
     )
     for result in blank:
@@ -236,50 +190,8 @@ def search_college(
             "%s: search returned %s page text for %s",
             name, result.raw_content_status, result.url,
         )
-        extract_raw_content(result)
 
     return list(results.values()), errors
-
-
-def extract_once(url: str) -> tuple[str, str]:
-    """One extract() call for one URL. Returns (status, page text)."""
-    try:
-        response = tavily().extract(
-            urls=[url], format=RAW_CONTENT_FORMAT, extract_depth=EXTRACT_DEPTH,
-        )
-    except Exception as e:
-        logger.debug("extract() raised for %s: %s", url, e)
-        return ExtractStatus.FAILED_EXCEPTION, ""
-
-    # One URL per call, so any entry is ours. Tavily may normalise the URL it
-    # echoes back, which is why we don't match on it.
-    if response.get("results"):
-        text = sanitize_for_csv(response["results"][0].get("raw_content") or "")
-        if text.strip():
-            return ExtractStatus.SUCCEEDED, text
-        return ExtractStatus.SUCCEEDED_EMPTY, ""
-
-    # Tavily reports per-URL failures here rather than raising.
-    if response.get("failed_results"):
-        error = response["failed_results"][0].get("error", "")
-        logger.debug("extract() failed for %s: %s", url, error)
-        return ExtractStatus.FAILED_PER_URL, ""
-
-    return ExtractStatus.NO_RESPONSE_ENTRY, ""
-
-
-def extract_raw_content(result: SearchResult) -> None:
-    """Fill in a result's page text, retrying failed extracts.
-
-    After the last attempt the row keeps empty text and records why in
-    extract_status; a failed extraction doesn't invalidate the search hit.
-    """
-    for attempt in range(EXTRACT_MAX_ATTEMPTS):
-        if attempt:
-            time.sleep(EXTRACT_RETRY_SLEEP_S)
-        result.extract_status, result.raw_content = extract_once(result.url)
-        if result.extract_status not in RETRYABLE:
-            return
 
 
 def log_raw_content(name: str, results: list[SearchResult]) -> None:
@@ -292,7 +204,7 @@ def log_raw_content(name: str, results: list[SearchResult]) -> None:
             )
 
 
-def main(input_csv: str = DEFAULT_INPUT_CSV, output_csv: str = DEFAULT_CANDIDATES_CSV) -> None:
+def main(input_csv: str = DEFAULT_INPUT_CSV, output_csv: str = SEARCH_RESULTS_CSV) -> None:
     query_templates = load_query_templates(QUERY_TEMPLATES_PATH)
     excluded_domains = load_word_list(EXCLUDED_DOMAINS_PATH)
 
@@ -316,14 +228,14 @@ def main(input_csv: str = DEFAULT_INPUT_CSV, output_csv: str = DEFAULT_CANDIDATE
                 tried = "; ".join(t.format(name=name) for t in query_templates)
                 writer.writerow({
                     **institution,
-                    "search_query": f"NO_RESULTS: {tried}",
+                    "search_query": f"{NO_RESULTS_PREFIX} {tried}",
                 })
 
             for error in errors:
                 writer.writerow({
                     **institution,
                     "search_query": error.query,
-                    "result_url": "ERROR", "result_title": error.message,
+                    "result_url": ERROR_URL, "result_title": error.message,
                 })
 
             for result in results:

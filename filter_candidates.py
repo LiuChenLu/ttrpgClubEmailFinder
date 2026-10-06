@@ -15,7 +15,7 @@ from __future__ import annotations
 import csv
 
 from config import (
-    CLUB_KEYWORDS_PATH, DEFAULT_CANDIDATES_CSV, DEFAULT_FILTERED_CSV,
+    CLUB_KEYWORDS_PATH, RENDERED_RESULTS_CSV, DEFAULT_FILTERED_CSV,
     TTRPG_KEYWORDS_PATH, load_word_list,
 )
 
@@ -100,7 +100,7 @@ def decide(row: dict, keywords: dict) -> str:
 
 
 def main(
-    input_csv: str = DEFAULT_CANDIDATES_CSV, output_csv: str = DEFAULT_FILTERED_CSV
+    input_csv: str = RENDERED_RESULTS_CSV, output_csv: str = DEFAULT_FILTERED_CSV
 ) -> None:
     ttrpg_kw = load_word_list(TTRPG_KEYWORDS_PATH)
     club_kw = load_word_list(CLUB_KEYWORDS_PATH)

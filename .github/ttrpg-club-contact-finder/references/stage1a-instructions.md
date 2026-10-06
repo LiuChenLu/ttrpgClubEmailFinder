@@ -38,7 +38,7 @@ Here are example rows that they would write:
 - `NO_RESULTS` is suppressed if any query raised, even if the other queries returned nothing.
 - `from_tavily` drops hits without a `url`, so a college whose hits all lack one gets `NO_RESULTS`.
 - `extract()` and Playwright failures are never sentinels; Stage 1b records them in `extract_status` and `render_status` on real rows.
-- Detection: `result_url == "ERROR"` marks an error row, and a `search_query` starting with `NO_RESULTS:` marks a no-results row. Real rows always have a non-blank `raw_content_status`.
+- Detection: `result_url == "ERROR"` marks an error row, and a `search_query` starting with `NO_RESULTS:` marks a no-results row. Real rows always have a non-blank `raw_content_status`. The markers (`ERROR_URL`, `NO_RESULTS_PREFIX`) and the detector `is_sentinel(row)` live in `search_row_format_util.py`, so this stage's writer and Stage 1b's reader share one definition. Stage 2 keeps its own local check (blank or `ERROR` `result_url`), which is equivalent on real data.
 
 ### Known gaps
 
@@ -57,8 +57,7 @@ Here are example rows that they would write:
 
 ## Code specifics
 
-- `csv.field_size_limit` is raised in this stage to accommodate full-page-text rows.
-- The Tavily client is built lazily (`functools.cache`) so importing the module doesn't require an API key to be set.
+- Shared with Stage 1b, not defined here. `tavily_client_util.py` holds the Tavily client `tavily()` (built lazily with `functools.cache`, so importing doesn't require an API key; importing the module also loads `.env`). `search_row_format_util.py` holds `sanitize_for_csv`, the sentinel markers, and `csv.field_size_limit` (raised for full-page-text rows; an import side effect). Don't copy them back into this script.
 
 ## Scale & budget
 

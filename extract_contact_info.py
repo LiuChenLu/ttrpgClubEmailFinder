@@ -80,7 +80,9 @@ def main(
          open(output_csv, "w", newline="", encoding="utf-8") as f_out:
 
         reader = csv.DictReader(f_in)
-        writer = csv.DictWriter(f_out, fieldnames=reader.fieldnames + NEW_FIELDNAMES)
+        writer = csv.DictWriter(f_out,
+                                fieldnames=NEW_FIELDNAMES if reader.fieldnames is None 
+                                           else list(reader.fieldnames) + NEW_FIELDNAMES)
         writer.writeheader()
 
         for row in reader:

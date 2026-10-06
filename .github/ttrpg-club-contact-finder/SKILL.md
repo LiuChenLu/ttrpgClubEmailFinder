@@ -1,6 +1,6 @@
 ---
 name: ttrpg-club-finder
-description: Domain knowledge and pitfalls for the TTRPG-club contact-finding project — a pipeline that searches for university tabletop-RPG/gaming club pages via Tavily (rendering JS-heavy pages with Playwright) and extracts contact info (email/Discord) into a CSV. ALWAYS read this before touching config.py, build_institution_dataset.py, fetch_candidates.py, render_candidates.py, filter_candidates.py, or extract_contact_info.py — even if the request doesn't say "ttrpg" explicitly. Start here for pitfalls and conventions; see pipeline_data_flow.md for the exact CSV schema of each stage's output; then open the matching file under references/ for the stage you're actually editing — don't load all of them at once.
+description: Domain knowledge and pitfalls for the TTRPG-club contact-finding project — a pipeline that searches for university tabletop-RPG/gaming club pages via Tavily (rendering JS-heavy pages with Playwright) and extracts contact info (email/Discord) into a CSV. ALWAYS read this before touching config.py, tavily_client_util.py, search_row_format_util.py, build_institution_dataset.py, fetch_candidates.py, render_candidates.py, filter_candidates.py, or extract_contact_info.py — even if the request doesn't say "ttrpg" explicitly. Start here for pitfalls and conventions; see pipeline_data_flow.md for the exact CSV schema of each stage's output; then open the matching file under references/ for the stage you're actually editing — don't load all of them at once.
 ---
 
 # TTRPG Club Finder — Project Knowledge
@@ -43,5 +43,6 @@ Full explanation, and which stage(s) each applies to, lives in the reference doc
 ## Code conventions (pipeline-wide)
 
 - All constants/paths in `config.py`; word lists are line-delimited `.txt` files under `config/`.
+- Code shared by Stages 1a and 1b is split by subject. `tavily_client_util.py` holds the Tavily client `tavily()` and `.env` loading. `search_row_format_util.py` holds the conventions of the search-result rows: `sanitize_for_csv`, the sentinel-row markers and `is_sentinel`, and the `csv.field_size_limit` setup. Import them rather than copying them, so the code that writes sentinel rows and the code that detects them can't drift apart. `config.py` stays free of the tavily dependency by design, and so does `search_row_format_util.py`. Stage 2 keeps its own local sentinel check.
 - Comments explain _why_, not _what_ — several gating decisions are intentional; read them before changing gating logic.
-- Stage-specific conventions (Tavily client setup, CSV field-size handling, etc.) are documented in the relevant reference doc, not here.
+- Stage-specific conventions are documented in the relevant reference doc, not here.
