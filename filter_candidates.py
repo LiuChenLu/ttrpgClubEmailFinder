@@ -13,6 +13,7 @@ Reads only candidates.csv; needs no network access or API key.
 from __future__ import annotations
 
 import csv
+from urllib.parse import urlsplit
 
 from config import (
     CLUB_KEYWORDS_PATH, RENDERED_RESULTS_CSV, DEFAULT_FILTERED_CSV,
@@ -66,6 +67,10 @@ def is_sentinel(row: dict) -> bool:
     return row["result_url"] in ("", "ERROR")
 
 
+def is_pdf_url(row: dict) -> bool:
+    return urlsplit(row["result_url"]).path.lower().endswith(".pdf")
+
+
 def keyword_columns(row: dict, ttrpg_kw: list[str], club_kw: list[str]) -> dict:
     # Sentinel rows aren't pages, so the exception message in an ERROR row's
     # result_title must not be scanned as if it were a title.
@@ -83,7 +88,7 @@ def keyword_columns(row: dict, ttrpg_kw: list[str], club_kw: list[str]) -> dict:
 
 
 def decide(row: dict, keywords: dict) -> str:
-    if is_sentinel(row):
+    if is_sentinel(row) or is_pdf_url(row):
         return "discard"
 
     snippet_gate = (

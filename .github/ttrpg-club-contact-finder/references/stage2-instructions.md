@@ -8,6 +8,7 @@ Conservatively filters Stage 1b's candidates by:
 
 1. Discarding results rows that don't contain any club-keyword OR ttrpg-keyword matches in the result title + snippet, as defined in `club_keywords.txt` / `ttrpg_keywords.txt`
 2. Discarding results rows that don't contain any club-keyword AND ttrpg-keyword matches in the full result, as defined in `club_keywords.txt` / `ttrpg_keywords.txt`
+3. Discarding PDF results where the url ends in `.pdf`.
 
 `result_raw_content` is markdown (Tavily) or plain text (Playwright), per `content_source`. The keyword matching applies to both, and `content_source` is carried through to the output for Stage 3.
 
