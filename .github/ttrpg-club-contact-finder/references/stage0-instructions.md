@@ -2,7 +2,7 @@
 
 **Output:** `data/institutions.csv`
 
-Pulls only the relevant columns from the IPEDS database and writes them to a CSV. This is the seed list every later stage iterates over — mistakes here propagate through the whole pipeline (Stage 1 will happily generate 3 good search queries for a wrong or collapsed institution row).
+Pulls only the relevant columns from the IPEDS database and writes them to a CSV. This is the seed list every later stage iterates over — mistakes here propagate through the whole pipeline.
 
 ## Things to get right at this stage
 
