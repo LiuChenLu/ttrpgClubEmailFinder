@@ -7,12 +7,19 @@ import pandas as pd
 import subprocess
 import csv
 import io
+import re
 from math import radians, sin, cos, asin, sqrt
+from urllib.parse import urlparse
 
 from config import EXCLUDED_INSTITUTION_NAMES_PATH, load_word_list
 
 INPUT_DATA_PATH = Path("./data/ipeds/IPEDS_2024-25_Provisional/IPEDS202425.accdb")
 OUTPUT_DATA_PATH = Path("./data/institutions.csv")
+HD_TABLE = "HD2024"
+ENROLLMENT_TABLE = "DRVEF2024"
+SIZE_COLUMN = "FTE"
+SIZE_MINIMUMS = {1: 300, 2: 750, 3: 10000}
+KEYWORD_SIZE_MAXIMUM = 1500
 HARTFORD_LATITUDE = 41.763710
 HARTFORD_LONGITUDE = -72.685097
 
@@ -31,40 +38,45 @@ def distance(lat1, lon1, lat2, lon2):
     return R * c
 
 
-def has_edu_webaddr(webaddr: str) -> bool:
-    """Return True if webaddr is non-empty and contains '.edu' as a substring."""
-    return bool(webaddr) and ".edu" in webaddr.lower()
-
-
-def has_excluded_name(name: str, excluded_terms: list[str]) -> bool:
-    """Return True if name contains any excluded term, case-insensitively."""
-    lowered = name.lower()
-    return any(term in lowered for term in excluded_terms)
+def is_edu(url):
+    if pd.isna(url):
+        return False
+    host = urlparse(
+        "//" + re.sub(r"^\w+://", "", url.strip().lower())
+    ).hostname
+    return bool(host) and host.endswith(".edu")
 
 
 def read_ipeds():
-    """Return the relevant HD2024 columns as a pandas DataFrame.
+    """Load institution data and merge FTE enrollment by UNITID."""
+    hd = read_ipeds_table(HD_TABLE)
+    enrollment = read_ipeds_table(ENROLLMENT_TABLE)
+    if SIZE_COLUMN not in enrollment.columns:
+        raise ValueError(
+            f"{SIZE_COLUMN} not in {ENROLLMENT_TABLE}; "
+            f"columns: {list(enrollment.columns)}"
+        )
 
-    Uses mdb-export rather than mdb-sql: mdb-sql has no field-quoting
-    mechanism, so any institution name containing a literal comma (e.g.
-    "First Institute of Travel, Inc.") silently corrupts a naive comma-split
-    parse. mdb-export quotes text fields by default, so csv.DictReader can
-    parse the output correctly regardless of embedded commas.
-    """
-    columns = ["UNITID", "INSTNM", "CITY", "LONGITUD", "LATITUDE", "WEBADDR"]
+    columns = [
+        "UNITID", "INSTNM", "CITY", "LONGITUD", "LATITUDE", "WEBADDR",
+        "CYACTIVE", "SECTOR", "ICLEVEL",
+    ]
+    return hd[columns].merge(
+        enrollment[["UNITID", SIZE_COLUMN]], on="UNITID", how="left"
+    )
 
+
+def read_ipeds_table(table):
+    """Export an IPEDS table with quoted fields parsed by pandas."""
     completed = subprocess.run(
-        ["mdb-export", "--null", "", str(INPUT_DATA_PATH), "HD2024"],
+        ["mdb-export", "--null", "", str(INPUT_DATA_PATH), table],
         check=True,
         capture_output=True,
         text=True,
     )
-
-    rows = list(csv.DictReader(io.StringIO(completed.stdout)))
-    if not rows:
-        return pd.DataFrame(columns=columns)
-
-    return pd.DataFrame(rows)[columns]
+    result = pd.read_csv(io.StringIO(completed.stdout), low_memory=False)
+    result.columns = result.columns.str.upper()
+    return result
 
 
 def process_ipeds(df):
@@ -74,21 +86,38 @@ def process_ipeds(df):
     result["UNITID"] = pd.to_numeric(result["UNITID"], errors="coerce")
     result["LONGITUD"] = pd.to_numeric(result["LONGITUD"], errors="coerce")
     result["LATITUDE"] = pd.to_numeric(result["LATITUDE"], errors="coerce")
-    result["WEBADDR"] = result["WEBADDR"].fillna("").astype(str).str.strip()
-
-    edu_mask = result["WEBADDR"].apply(has_edu_webaddr)
-    dropped = int((~edu_mask).sum())
-    if dropped:
-        print(f"Dropping {dropped} institution(s) without a .edu WEBADDR")
-    result = result[edu_mask]
+    result["CYACTIVE"] = pd.to_numeric(result["CYACTIVE"], errors="coerce")
+    result["SECTOR"] = pd.to_numeric(result["SECTOR"], errors="coerce")
+    result["ICLEVEL"] = pd.to_numeric(result["ICLEVEL"], errors="coerce")
+    size = pd.to_numeric(result[SIZE_COLUMN], errors="coerce")
+    size = size.where(size >= 0)
+    result[SIZE_COLUMN] = size
 
     excluded_terms = load_word_list(EXCLUDED_INSTITUTION_NAMES_PATH)
-    excluded_mask = result["INSTNM"].fillna("").apply(
-        has_excluded_name, args=(excluded_terms,)
-    )
-    if excluded_mask.any():
-        print(f"Dropping {int(excluded_mask.sum())} institution(s) with an excluded name")
-    result = result[~excluded_mask]
+    if excluded_terms:
+        pattern = r"\b(?:" + "|".join(map(re.escape, excluded_terms)) + r")\b"
+        keyword_hit = result["INSTNM"].str.contains(
+            pattern, case=False, regex=True, na=False
+        )
+    else:
+        keyword_hit = pd.Series(False, index=result.index)
+
+    rules = {
+        "inactive": result["CYACTIVE"] != 1,
+        "admin unit": result["SECTOR"] == 0,
+        "not .edu": ~result["WEBADDR"].map(is_edu),
+        "small for level": size < result["ICLEVEL"].map(SIZE_MINIMUMS),
+        "trade keyword + small": keyword_hit & (size < KEYWORD_SIZE_MAXIMUM),
+    }
+    for name, mask in rules.items():
+        count = int(mask.sum())
+        if count:
+            print(f"Dropping {count} institution(s): {name}")
+
+    drop_mask = pd.concat(rules.values(), axis=1).any(axis=1)
+    if drop_mask.any():
+        print(f"Dropping {int(drop_mask.sum())} institution(s) total")
+    result = result[~drop_mask].copy()
 
     coords_mask = result["LONGITUD"].notna() & result["LATITUDE"].notna()
     result["DISTANCE"] = pd.NA
