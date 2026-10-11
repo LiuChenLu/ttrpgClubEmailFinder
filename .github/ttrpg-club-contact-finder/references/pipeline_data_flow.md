@@ -77,11 +77,6 @@ Each row represents a search result except for sentinel rows used to log error.
 | `result_snippet` | string | 1a | — |
 | `club_keywords_found_in_snippet` | string | 2 | List of `club_keywords.txt` hits in snippet |
 | `ttrpg_keywords_found_in_snippet` | string | 2 | List of `ttrpg_keywords.txt` hits in snippet |
-| `result_raw_content` | string | 1a, 1b | Page text: markdown if `content_source` is `search` or `extract`, plain text if `playwright` |
-| `club_keywords_found_in_page` | string | 2 | List of `club_keywords.txt` hits in page |
-| `ttrpg_keywords_found_in_page` | string | 2 | List of `ttrpg_keywords.txt` hits in page |
-| `raw_content_length` | int | 1a, 1b | Length of `result_raw_content` |
-| `content_source` | string | 1b | `search` / `extract` / `playwright`; carried through from Stage 1b |
 
 ## Stage 3 - Classify and extract contact info (`extract_contact_info.py`) output contacts.csv
 

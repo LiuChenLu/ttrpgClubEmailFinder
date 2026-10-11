@@ -1,13 +1,14 @@
 """Stage 2: record keyword signals for each Stage 1 candidate and decide keep/discard.
 
-A row is kept only if it passes both gates:
-  - snippet gate: the result title + snippet hit at least one club OR ttrpg keyword.
-  - page gate: the extracted page text hits at least one club AND one ttrpg keyword.
+A row is kept if its result title + snippet hit at least one club OR ttrpg
+keyword. That is the only keyword gate: the page text is neither read nor
+copied to the output.
 
-Discarded rows are still written (decision="discard") so the gates can be
-audited. NO_RESULTS/ERROR rows are always discarded.
+Discarded rows are still written (decision="discard") so the gate can be
+audited. NO_RESULTS/ERROR rows and PDF results are always discarded.
 
-Reads only candidates.csv; needs no network access or API key.
+Reads only the input CSV (Stage 1b's by default); needs no network access or
+API key.
 """
 
 from __future__ import annotations
@@ -20,13 +21,14 @@ from config import (
     TTRPG_KEYWORDS_PATH, load_word_list,
 )
 
-# Stage 1 writes whole pages into result_raw_content, which can exceed csv's
-# default 128 KB field limit and make the reader raise.
+# The input still carries whole pages in result_raw_content. This stage never
+# reads that column, but csv.DictReader parses every field of every row, so a
+# page over csv's default 128 KB field limit would make the reader raise anyway.
+# Remove this once Stage 1 stops writing page text.
 csv.field_size_limit(2**31 - 1)
 
 KEYWORD_FIELDNAMES = [
     "club_keywords_found_in_snippet", "ttrpg_keywords_found_in_snippet",
-    "club_keywords_found_in_page", "ttrpg_keywords_found_in_page",
 ]
 
 # Column order of the Stage 2 table in pipeline_data_flow.md.
@@ -35,12 +37,9 @@ FILTERED_FIELDNAMES = [
     "decision", "unitid", "college_name", "city", "website",
     "result_title", "result_url", "result_snippet",
     "club_keywords_found_in_snippet", "ttrpg_keywords_found_in_snippet",
-    "result_raw_content",
-    "club_keywords_found_in_page", "ttrpg_keywords_found_in_page",
-    "raw_content_length",
 ]
 
-# The columns copied through from candidates.csv.
+# The columns copied through from the input CSV; all of them are required.
 INPUT_FIELDNAMES = [
     name for name in FILTERED_FIELDNAMES
     if name != "decision" and name not in KEYWORD_FIELDNAMES
@@ -49,11 +48,14 @@ INPUT_FIELDNAMES = [
 # TODO: special-case club hosting vendors, each identifiable from the page
 # source: CampusGroups ("Powered by CampusGroups"), Modern Campus Involve,
 # Anthology Engage, Lounge, Corq. This is a keep-signal, so it has to run
-# before the discard rules in decide().
+# before the discard rules in decide(). Stage 2 no longer reads page text, so
+# this would have to match on result_url instead, or move to a stage that has
+# the page.
 
 # Directory pages (an A-Z list of a school's clubs) are deliberately kept: they
-# hit both keyword lists like any club page. Stage 3 splits out the individual
-# clubs, so Stage 2 doesn't need to detect them.
+# go through the snippet gate like any other result, so a club keyword alone
+# passes one, whether or not it lists a TTRPG club. Stage 3 splits out the
+# individual clubs, so Stage 2 doesn't need to detect them.
 
 
 def find_keywords(text: str, keywords: list[str]) -> list[str]:
@@ -78,12 +80,9 @@ def keyword_columns(row: dict, ttrpg_kw: list[str], club_kw: list[str]) -> dict:
         return dict.fromkeys(KEYWORD_FIELDNAMES, "")
 
     snippet = f"{row['result_title']} {row['result_snippet']}"
-    page = row["result_raw_content"]
     return {
         "club_keywords_found_in_snippet": "; ".join(find_keywords(snippet, club_kw)),
         "ttrpg_keywords_found_in_snippet": "; ".join(find_keywords(snippet, ttrpg_kw)),
-        "club_keywords_found_in_page": "; ".join(find_keywords(page, club_kw)),
-        "ttrpg_keywords_found_in_page": "; ".join(find_keywords(page, ttrpg_kw)),
     }
 
 
@@ -95,13 +94,7 @@ def decide(row: dict, keywords: dict) -> str:
         keywords["club_keywords_found_in_snippet"]
         or keywords["ttrpg_keywords_found_in_snippet"]
     )
-    # Empty page text has no hits, so it fails this gate too: a failed extract
-    # leaves nothing to pull a contact from.
-    page_gate = (
-        keywords["club_keywords_found_in_page"]
-        and keywords["ttrpg_keywords_found_in_page"]
-    )
-    return "keep" if snippet_gate and page_gate else "discard"
+    return "keep" if snippet_gate else "discard"
 
 
 def main(
@@ -121,7 +114,7 @@ def main(
 
         with open(output_csv, "w", newline="", encoding="utf-8") as f_out:
             # Input columns outside FILTERED_FIELDNAMES (search_query,
-            # result_score, ...) are dropped.
+            # result_score, the page text, ...) are dropped.
             writer = csv.DictWriter(
                 f_out, fieldnames=FILTERED_FIELDNAMES, extrasaction="ignore"
             )
