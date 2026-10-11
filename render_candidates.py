@@ -1,4 +1,4 @@
-"""Stage 1b: repair blank or suspiciously short page text from Stage 1a.
+"""Stage 2: repair blank or suspiciously short page text from Stage 1.
 
 Reads search_results.csv and writes rendered_results.csv with the same rows in
 the same order; sentinel rows pass through untouched. A row's page text is
@@ -48,14 +48,14 @@ logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 logger = logging.getLogger("render_candidates")
 logger.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
 
-# Columns Stage 1a's output must have. The rest are carried through untouched.
+# Columns Stage 1's output must have. The rest are carried through untouched.
 REQUIRED_INPUT_COLUMNS = [
     "result_url", "search_query", "raw_content_status",
     "raw_content_length", "result_raw_content",
 ]
 
 # Columns this stage adds. If the input already has any of them it is not a
-# current Stage 1a output (an old one carried extract_status), and writing it
+# current Stage 1 output (an old one carried extract_status), and writing it
 # back out would duplicate the column.
 NEW_FIELDNAMES = ["extract_status", "render_status", "content_source"]
 
@@ -294,7 +294,7 @@ class PlaywrightRenderer:
 
 
 def render_row(row: dict, renderer, extract=extract_with_retries) -> dict:
-    """The Stage 1b version of one Stage 1a row.
+    """The Stage 2 version of one Stage 1 row.
 
     `renderer` is anything with fetch_text(url) -> str (a PlaywrightRenderer).
     Extract and Playwright failures are recorded on the row, never as
@@ -368,8 +368,8 @@ def check_input_columns(fieldnames: Sequence[str], path: str) -> None:
     already = [c for c in NEW_FIELDNAMES if c in fieldnames]
     if already:
         raise ValueError(
-            f"{path} already has Stage 1b columns {already}, so it is not a "
-            "current Stage 1a output."
+            f"{path} already has Stage 2 columns {already}, so it is not a "
+            "current Stage 1 output."
         )
 
 

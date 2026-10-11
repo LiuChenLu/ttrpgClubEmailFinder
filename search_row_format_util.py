@@ -1,4 +1,4 @@
-"""The conventions of the search-result rows Stage 1a writes and Stage 1b carries on.
+"""The conventions of the search-result rows Stage 1 writes and Stage 2 carries on.
 
 Covers how page text is sanitized for CSV, and how sentinel rows (a failure
 logged in place of a result) are marked and detected. The markers are shared
@@ -18,7 +18,7 @@ import re
 # 2**31 - 1 is the largest value that doesn't overflow on Windows.
 csv.field_size_limit(2**31 - 1)
 
-# Sentinel rows log a failure instead of describing a search result. Stage 1a
+# Sentinel rows log a failure instead of describing a search result. Stage 1
 # writes two kinds: an ERROR row (result_url is ERROR_URL, and the exception
 # message is in result_title) and a NO_RESULTS row (search_query starts with
 # NO_RESULTS_PREFIX, and result_url is blank).

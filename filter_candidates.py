@@ -1,4 +1,4 @@
-"""Stage 2: record keyword signals for each Stage 1 candidate and decide keep/discard.
+"""Stage 3: record keyword signals for each Stage 1 candidate and decide keep/discard.
 
 A row is kept if its result title + snippet hit at least one club OR ttrpg
 keyword. That is the only keyword gate: the page text is neither read nor
@@ -7,7 +7,7 @@ copied to the output.
 Discarded rows are still written (decision="discard") so the gate can be
 audited. NO_RESULTS/ERROR rows and PDF results are always discarded.
 
-Reads only the input CSV (Stage 1b's by default); needs no network access or
+Reads only the input CSV (Stage 2's by default); needs no network access or
 API key.
 """
 
@@ -31,7 +31,7 @@ KEYWORD_FIELDNAMES = [
     "club_keywords_found_in_snippet", "ttrpg_keywords_found_in_snippet",
 ]
 
-# Column order of the Stage 2 table in pipeline_data_flow.md.
+# Column order of the Stage 3 table in pipeline_data_flow.md.
 # TODO pass along content_source from input csv as well
 FILTERED_FIELDNAMES = [
     "decision", "unitid", "college_name", "city", "website",
@@ -48,14 +48,14 @@ INPUT_FIELDNAMES = [
 # TODO: special-case club hosting vendors, each identifiable from the page
 # source: CampusGroups ("Powered by CampusGroups"), Modern Campus Involve,
 # Anthology Engage, Lounge, Corq. This is a keep-signal, so it has to run
-# before the discard rules in decide(). Stage 2 no longer reads page text, so
+# before the discard rules in decide(). Stage 3 no longer reads page text, so
 # this would have to match on result_url instead, or move to a stage that has
 # the page.
 
 # Directory pages (an A-Z list of a school's clubs) are deliberately kept: they
 # go through the snippet gate like any other result, so a club keyword alone
-# passes one, whether or not it lists a TTRPG club. Stage 3 splits out the
-# individual clubs, so Stage 2 doesn't need to detect them.
+# passes one, whether or not it lists a TTRPG club. Stage 4 splits out the
+# individual clubs, so Stage 3 doesn't need to detect them.
 
 
 def find_keywords(text: str, keywords: list[str]) -> list[str]:

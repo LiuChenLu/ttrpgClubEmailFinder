@@ -1,6 +1,6 @@
-"""Stage 2: derive contact signals from stage 1's CSV. Makes no network calls.
+"""Stage 4: derive contact signals from stage 3's CSV. Makes no network calls.
 
-For each row, the text gate is re-derived from stage 1's columns: both
+For each row, the text gate is re-derived from stage 3's columns: both
 club_keywords_found_in_text AND ttrpg_keywords_found_in_text must be non-empty.
 Rows that fail it are written through with the three new columns blank/false
 and are never scanned. Every input row produces exactly one output row.
@@ -48,7 +48,7 @@ csv.field_size_limit(2**31 - 1)
 
 
 def passes_text_gate(row: dict) -> bool:
-    """AND across the two lists, unlike stage 1's OR over the snippet."""
+    """AND across the two lists, unlike stage 3's OR over the snippet."""
     return bool(
         row.get("club_keywords_found_in_text", "").strip()
         and row.get("ttrpg_keywords_found_in_text", "").strip()

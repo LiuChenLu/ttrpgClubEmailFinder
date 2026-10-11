@@ -1,4 +1,4 @@
-"""Stage 1a: search for candidate TTRPG club pages and record the raw results.
+"""Stage 1: search for candidate TTRPG club pages and record the raw results.
 
 For each college we run every query template through Tavily, asking for each
 hit's page text, and de-duplicate hits by URL. Every search hit gets a row
@@ -7,11 +7,11 @@ Input columns (except DROPPED_INPUT_COLUMNS) are carried onto each output row,
 so later stages never need to join back to it.
 
 Page text comes from the search call only. Hits whose text came back blank or
-suspiciously short are repaired by render_candidates.py (Stage 1b), which
+suspiciously short are repaired by render_candidates.py (Stage 2), which
 re-fetches them with Tavily extract() and Playwright.
 
 This makes no judgement about whether a result is a club page and computes no
-keyword signals. filter_candidates.py reads Stage 1b's output and does that
+keyword signals. filter_candidates.py reads Stage 2's output and does that
 offline.
 
 Setup:
@@ -137,7 +137,7 @@ class SearchResult:
             "raw_content_status": self.raw_content_status,
             "raw_content_length": len(self.raw_content),
             # TODO: the full run should not carry whole pages in this column —
-            # it is the bulk of the file size and nothing downstream of stage 2
+            # it is the bulk of the file size and nothing downstream of stage 3
             # needs it. Written in full only so the current test runs can be
             # eyeballed.
             "result_raw_content": self.raw_content,
@@ -150,7 +150,7 @@ def search_college(
     """Run every query template for one college, de-duplicated by URL.
 
     Page text arrives with each hit; blank or suspiciously short text is left
-    for Stage 1b to repair. There is no quality filter here — Stage 2 makes
+    for Stage 2 to repair. There is no quality filter here — Stage 3 makes
     that call.
     """
     results: dict[str, SearchResult] = {}

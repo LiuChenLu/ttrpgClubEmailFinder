@@ -10,13 +10,13 @@ HAS_TTRPG_CLUB_PATH = "./data/iped_institution_has_ttrpg_club.csv"
 RANDOM_COLLEGE_SAMEPLE = "./data/institutions_sample.csv"
 DEFAULT_INPUT_CSV = HAS_TTRPG_CLUB_PATH
 
-# Output of stage 1a
+# Output of stage 1
 SEARCH_RESULTS_CSV = "./data/search_results.csv"
-# Output of stage 1b
-RENDERED_RESULTS_CSV = "./data/rendered_results.csv"
 # Output of stage 2
-DEFAULT_FILTERED_CSV = "./data/filtered_candidates.csv"
+RENDERED_RESULTS_CSV = "./data/rendered_results.csv"
 # Output of stage 3
+DEFAULT_FILTERED_CSV = "./data/filtered_candidates.csv"
+# Output of stage 4
 DEFAULT_CONTACTS_CSV = "./data/ttrpg_clubs_contacts.csv"
 
 # --- institutions (stage 0) -------------------------------------------------
@@ -42,7 +42,7 @@ SEARCH_DEPTH = "advanced"
 # Tavily only honors this when the search topic is "general" (its default).
 SEARCH_COUNTRY = "united states"
 
-# Page-text format for both the search hit's raw_content and Stage 1b's
+# Page-text format for both the search hit's raw_content and Stage 2's
 # fallback extract().
 RAW_CONTENT_FORMAT = "markdown"
 
@@ -55,7 +55,7 @@ SLEEP_BETWEEN_COLLEGES_S = 0.2
 # to catch a JS/consent-wall stub early in a run without hundreds of log lines.
 RAW_CONTENT_PREVIEW_COUNT = 5
 
-# --- render (stage 1b) -------------------------------------------------------
+# --- render (stage 2) --------------------------------------------------------
 
 EXTRACT_DEPTH = "advanced"
 EXTRACT_MAX_ATTEMPTS = 2
