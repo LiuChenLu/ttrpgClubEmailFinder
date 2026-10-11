@@ -7,7 +7,7 @@ Pulls only the relevant columns from the IPEDS database and writes them to a CSV
 ## Things to get right at this stage
 
 - **Multi-campus systems** (SUNY, UC, Penn State, etc.) — keep each campus as its own row with its own name.
-- **`WEBADDR` is captured but is not a reliable domain filter downstream.** It's IPEDS's "official site" column, but club pages routinely live off that domain — on vendor platforms, subdomains, or elsewhere. Keep the column (it's still a useful signal since sometimes club pages are hosted on webaddr for smaller institutions). Full reasoning on why, and what Stage 1 does instead, is in [stage1-search.md](stage1-search.md).
+- **`WEBADDR` is captured but is not a reliable domain filter downstream.** It's IPEDS's "official site" column, but club pages routinely live off that domain — on vendor platforms, subdomains, or elsewhere. Keep the column (it's still a useful signal since sometimes club pages are hosted on webaddr for smaller institutions). Full reasoning on why, and what Stage 1 does instead, is in [stage1_fetch_candidates.md](stage1_fetch_candidates.md).
 - **Filtering out institutions that likely do not have a TTRPT club.** Filtering is coarsely tuned according to the following rules, which cuts the number of institutions by about 50%. If an institution matches any of these rules, it is filtered out. Negative FTE values are treated as missing; missing FTE does not trigger a size-based rule.
   - Inactive: CYACTIVE is not 1.
   - Administrative unit: SECTOR is 0.

@@ -1,6 +1,6 @@
-# Stage 3 — `extract_contact_info.py`
+# Stage 4 — `extract_contact_info.py`
 
-**Input:** `data/filtered_candidates.csv` (Stage 2)
+**Input:** `data/filtered_candidates.csv` (Stage 3)
 
 **Output:** `data/contacts.csv`
 
