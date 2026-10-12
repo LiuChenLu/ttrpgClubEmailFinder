@@ -1,4 +1,4 @@
-"""Stage 3: record keyword signals for each Stage 1 candidate and decide keep/discard.
+"""Stage 2: record keyword signals for each Stage 1 candidate and decide keep/discard.
 
 A row is kept if its result title + snippet hit at least one club OR ttrpg
 keyword. That is the only keyword gate: the page text is neither read nor
@@ -7,7 +7,7 @@ copied to the output.
 Discarded rows are still written (decision="discard") so the gate can be
 audited. NO_RESULTS/ERROR rows and PDF results are always discarded.
 
-Reads only the input CSV (Stage 2's by default); needs no network access or
+Reads only the input CSV (Stage 1's by default); needs no network access or
 API key.
 """
 
@@ -17,7 +17,7 @@ import csv
 from urllib.parse import urlsplit
 
 from config import (
-    CLUB_KEYWORDS_PATH, RENDERED_RESULTS_CSV, DEFAULT_FILTERED_CSV,
+    CLUB_KEYWORDS_PATH, SEARCH_RESULTS_CSV, DEFAULT_FILTERED_CSV,
     TTRPG_KEYWORDS_PATH, load_word_list,
 )
 
@@ -31,19 +31,19 @@ KEYWORD_FIELDNAMES = [
     "club_keywords_found_in_snippet", "ttrpg_keywords_found_in_snippet",
 ]
 
-# Column order of the Stage 3 table in pipeline_data_flow.md.
-# TODO pass along content_source from input csv as well
-FILTERED_FIELDNAMES = [
-    "decision", "unitid", "college_name", "city", "website",
+# Stage 1 fields are retained so Stage 3 can render kept rows from this audit.
+SEARCH_FIELDNAMES = [
+    "unitid", "college_name", "city", "website", "search_query",
     "result_title", "result_url", "result_snippet",
-    "club_keywords_found_in_snippet", "ttrpg_keywords_found_in_snippet",
+    "raw_content_status", "raw_content_length", "result_raw_content",
 ]
 
-# The columns copied through from the input CSV; all of them are required.
-INPUT_FIELDNAMES = [
-    name for name in FILTERED_FIELDNAMES
-    if name != "decision" and name not in KEYWORD_FIELDNAMES
+# Keyword hits are debugging/audit fields for this stage; rendering drops them.
+FILTERED_FIELDNAMES = [
+    "decision", *SEARCH_FIELDNAMES, *KEYWORD_FIELDNAMES,
 ]
+
+INPUT_FIELDNAMES = SEARCH_FIELDNAMES
 
 # TODO: special-case club hosting vendors, each identifiable from the page
 # source: CampusGroups ("Powered by CampusGroups"), Modern Campus Involve,
@@ -55,7 +55,7 @@ INPUT_FIELDNAMES = [
 # Directory pages (an A-Z list of a school's clubs) are deliberately kept: they
 # go through the snippet gate like any other result, so a club keyword alone
 # passes one, whether or not it lists a TTRPG club. Stage 4 splits out the
-# individual clubs, so Stage 3 doesn't need to detect them.
+# individual clubs, so Stage 2 doesn't need to detect them.
 
 
 def find_keywords(text: str, keywords: list[str]) -> list[str]:
@@ -98,7 +98,7 @@ def decide(row: dict, keywords: dict) -> str:
 
 
 def main(
-    input_csv: str = RENDERED_RESULTS_CSV, output_csv: str = DEFAULT_FILTERED_CSV
+    input_csv: str = SEARCH_RESULTS_CSV, output_csv: str = DEFAULT_FILTERED_CSV
 ) -> None:
     ttrpg_kw = load_word_list(TTRPG_KEYWORDS_PATH)
     club_kw = load_word_list(CLUB_KEYWORDS_PATH)
@@ -113,8 +113,6 @@ def main(
             raise ValueError(f"{input_csv} is missing columns: {sorted(missing)}")
 
         with open(output_csv, "w", newline="", encoding="utf-8") as f_out:
-            # Input columns outside FILTERED_FIELDNAMES (search_query,
-            # result_score, the page text, ...) are dropped.
             writer = csv.DictWriter(
                 f_out, fieldnames=FILTERED_FIELDNAMES, extrasaction="ignore"
             )

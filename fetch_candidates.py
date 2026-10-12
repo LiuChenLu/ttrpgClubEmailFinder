@@ -7,12 +7,12 @@ Input columns (except DROPPED_INPUT_COLUMNS) are carried onto each output row,
 so later stages never need to join back to it.
 
 Page text comes from the search call only. Hits whose text came back blank or
-suspiciously short are repaired by render_candidates.py (Stage 2), which
-re-fetches them with Tavily extract() and Playwright.
+suspiciously short are repaired by render_candidates.py (Stage 3), which
+re-fetches kept rows with Tavily extract() and Playwright after Stage 2 filters.
 
 This makes no judgement about whether a result is a club page and computes no
-keyword signals. filter_candidates.py reads Stage 2's output and does that
-offline.
+keyword signals. filter_candidates.py reads this output and records its
+keyword decision offline as Stage 2.
 
 Setup:
     pip install tavily-python python-dotenv
@@ -136,10 +136,8 @@ class SearchResult:
             "result_snippet": "\n\n".join(self.snippets),
             "raw_content_status": self.raw_content_status,
             "raw_content_length": len(self.raw_content),
-            # TODO: the full run should not carry whole pages in this column —
-            # it is the bulk of the file size and nothing downstream of stage 3
-            # needs it. Written in full only so the current test runs can be
-            # eyeballed.
+            # The page text is large, but Stage 3 may repair it and Stage 4
+            # scans it for contact signals, so it must remain in this handoff.
             "result_raw_content": self.raw_content,
         }
 
@@ -150,7 +148,7 @@ def search_college(
     """Run every query template for one college, de-duplicated by URL.
 
     Page text arrives with each hit; blank or suspiciously short text is left
-    for Stage 2 to repair. There is no quality filter here — Stage 3 makes
+    for Stage 3 to repair. There is no quality filter here — Stage 2 makes
     that call.
     """
     results: dict[str, SearchResult] = {}

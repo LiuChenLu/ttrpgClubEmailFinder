@@ -1,9 +1,8 @@
-"""Stage 4: derive contact signals from stage 3's CSV. Makes no network calls.
+"""Stage 4: derive contact signals from Stage 3's rendered CSV.
 
-For each row, the text gate is re-derived from stage 3's columns: both
-club_keywords_found_in_text AND ttrpg_keywords_found_in_text must be non-empty.
-Rows that fail it are written through with the three new columns blank/false
-and are never scanned. Every input row produces exactly one output row.
+Rows with decision="keep" are scanned; all other rows are written through with
+the three new contact columns blank/false. Every input row produces exactly
+one output row.
 
 Usage:
     python extract_contact_info.py
@@ -14,7 +13,7 @@ from __future__ import annotations
 import csv
 import re
 
-from config import DEFAULT_CONTACTS_CSV, DEFAULT_FILTERED_CSV
+from config import DEFAULT_CONTACTS_CSV, RENDERED_RESULTS_CSV
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}")
 DISCORD_RE = re.compile(r"(?:discord\.gg|discord\.com/invite)/[A-Za-z0-9-]+")
@@ -47,12 +46,8 @@ csv.field_size_limit(2**31 - 1)
 # TODO: distinguish multiple emails (club president vs. club group address).
 
 
-def passes_text_gate(row: dict) -> bool:
-    """AND across the two lists, unlike stage 3's OR over the snippet."""
-    return bool(
-        row.get("club_keywords_found_in_text", "").strip()
-        and row.get("ttrpg_keywords_found_in_text", "").strip()
-    )
+def passes_decision_gate(row: dict) -> bool:
+    return row.get("decision") == "keep"
 
 
 def contact_columns(raw_content: str, snippet: str) -> dict:
@@ -74,26 +69,31 @@ def contact_columns(raw_content: str, snippet: str) -> dict:
 
 
 def main(
-    input_csv: str = DEFAULT_FILTERED_CSV, output_csv: str = DEFAULT_CONTACTS_CSV
+    input_csv: str = RENDERED_RESULTS_CSV, output_csv: str = DEFAULT_CONTACTS_CSV
 ) -> None:
-    with open(input_csv, newline="", encoding="utf-8") as f_in, \
-         open(output_csv, "w", newline="", encoding="utf-8") as f_out:
-
+    with open(input_csv, newline="", encoding="utf-8") as f_in:
         reader = csv.DictReader(f_in)
-        writer = csv.DictWriter(f_out,
-                                fieldnames=NEW_FIELDNAMES if reader.fieldnames is None 
-                                           else list(reader.fieldnames) + NEW_FIELDNAMES)
-        writer.writeheader()
+        missing = {"decision", "result_raw_content", "result_snippet"} - set(
+            reader.fieldnames or []
+        )
+        if missing:
+            raise ValueError(f"{input_csv} is missing columns: {sorted(missing)}")
 
-        for row in reader:
-            if passes_text_gate(row):
-                row.update(contact_columns(
-                    row.get("result_raw_content", ""),
-                    row.get("result_snippet", ""),
-                ))
-            else:
-                row.update(NOT_SCANNED)
-            writer.writerow(row)
+        with open(output_csv, "w", newline="", encoding="utf-8") as f_out:
+            writer = csv.DictWriter(
+                f_out, fieldnames=list(reader.fieldnames) + NEW_FIELDNAMES
+            )
+            writer.writeheader()
+
+            for row in reader:
+                if passes_decision_gate(row):
+                    row.update(contact_columns(
+                        row.get("result_raw_content", ""),
+                        row.get("result_snippet", ""),
+                    ))
+                else:
+                    row.update(NOT_SCANNED)
+                writer.writerow(row)
 
 
 if __name__ == "__main__":

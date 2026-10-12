@@ -35,14 +35,15 @@ Each row represents a search result except for sentinel rows used to log error.
 | `raw_content_length` | int | 1 | Length of `result_raw_content` |
 | `result_raw_content` | string | 1 | Page text in markdown; blank if the search-time fetch failed |
 
-## Stage 2 - Render candidates (`render_candidates.py`) output rendered_results.csv
+## Stage 2 - Filter candidates (`filter_candidates.py`) output filtered_candidates.csv
 
-Stage 2 repairs blank or suspiciously short page content with Tavily `extract`, then Playwright (see `stage2_render_candidates.md`). It reads search_results.csv and writes every row, so row count is unchanged; sentinel rows pass through with `render_status` and `content_source` blank.
+Stage 2 filters the Stage 1 search results by title and snippet before any page repair (see `stage2_filter_candidates.md`). It writes every row, including discards, so the decisions and keyword evidence remain auditable. The original search fields and page text pass through for Stage 3.
 
 Each row represents a search result except for sentinel rows used to log error.
 
 | Column | Type | Stage | Notes |
 | --- | --- | --- | --- |
+| `decision` | enum | 2 | `keep` or `discard`; sentinel and PDF rows are discarded |
 | `unitid` | string | 0 | IPEDS unit ID |
 | `college_name` | string | 0 | IPEDS institution name |
 | `city` | string | 0 | IPEDS city |
@@ -53,52 +54,47 @@ Each row represents a search result except for sentinel rows used to log error.
 | `result_score` | float | 1 | Search API relevance score |
 | `result_snippet` | string | 1 | — |
 | `raw_content_status` | string | 1 | result of the search-time raw_content fetch |
-| `extract_status` | string | 2 | result of the Tavily extract attempts; blank if not attempted |
-| `raw_content_length` | int | 1, 2 | Length of the final `result_raw_content` |
-| `result_raw_content` | string | 1, 2 | Page text: markdown if `content_source` is `search` or `extract`, plain text if `playwright`; blank if every attempt failed |
-| `render_status` | string | 2 | `not_needed` / `succeeded` / `failed_per_url`; blank on sentinel rows |
-| `content_source` | string | 2 | `search` / `extract` / `playwright`; blank if content is blank or on sentinel rows |
+| `raw_content_length` | int | 1 | Length of `result_raw_content` |
+| `result_raw_content` | string | 1 | Search-time page text; preserved for Stage 3 |
+| `club_keywords_found_in_snippet` | string | 2 | Matching club keywords in title + snippet; Stage 2 audit/debug only |
+| `ttrpg_keywords_found_in_snippet` | string | 2 | Matching TTRPG keywords in title + snippet; Stage 2 audit/debug only |
 
-## Stage 3 - Filter candidates (`filter_candidates.py`) output filtered_candidates.csv
+## Stage 3 - Render candidates (`render_candidates.py`) output rendered_results.csv
 
-Stage 3 filters the results from stage 2 (rendered_results.csv) to remove low quality hits. It is conservative with what it discards.
+Stage 3 reads Stage 2's full audit output. Kept rows are repaired with Tavily `extract` and, when needed, Playwright (see `stage3_render_candidates.md`). Discarded rows pass through without network or browser rendering. All input rows are written, so row count is unchanged. The two keyword-hit debug columns are omitted; `decision` is retained for Stage 4.
 
 Each row represents a search result except for sentinel rows used to log error.
 
 | Column | Type | Stage | Notes |
 | --- | --- | --- | --- |
-| `decision` | enum | 3 | one of `keep`/`discard` |
+| `decision` | enum | 2 | `keep` or `discard`; controls whether Stage 3 renders the row |
 | `unitid` | string | 0 | IPEDS unit ID |
 | `college_name` | string | 0 | IPEDS institution name |
 | `city` | string | 0 | IPEDS city |
 | `website` | string | 0 | IPEDS official website |
+| `search_query` | string | 1 | Query of the best scoring search result across queries |
 | `result_title` | string | 1 | — |
 | `result_url` | string | 1 | — |
+| `result_score` | float | 1 | Search API relevance score |
 | `result_snippet` | string | 1 | — |
-| `club_keywords_found_in_snippet` | string | 3 | List of `club_keywords.txt` hits in snippet |
-| `ttrpg_keywords_found_in_snippet` | string | 3 | List of `ttrpg_keywords.txt` hits in snippet |
+| `raw_content_status` | string | 1 | Search-time page-content fetch status |
+| `extract_status` | string | 3 | Tavily extract outcome; blank if not attempted |
+| `raw_content_length` | int | 1, 3 | Length of final `result_raw_content` |
+| `result_raw_content` | string | 1, 3 | Final page text; may come from search, extract, or Playwright |
+| `render_status` | string | 3 | `not_needed` / `succeeded` / `failed_per_url`; blank for discarded rows and sentinels |
+| `content_source` | string | 3 | `search` / `extract` / `playwright`; blank if content is blank |
 
-## Stage 4 - Classify and extract contact info (`extract_contact_info.py`) output contacts.csv
+## Stage 4 - Extract contact signals (`extract_contact_info.py`) output ttrpg_clubs_contacts.csv
 
-**Status:** Not implemented — this stage doesn't exist yet, so nothing in the table below is populated by real output today. It describes the target schema: once built, Stage 4 is meant to classify each filtered candidate as a university club page, a conglomerate clubs page for the university, or not a club page, and pull out contact info from the page if it exists (see `stage4_extract_contact_info.md`). A separate LLM-based approach is proposed in `LLM-proposal.md`, an early design draft; its schema doesn't match this table.
+Stage 4 scans only rows with `decision=keep` and derives contact signals from the rendered text and snippet. It does not yet classify school attribution or split directory pages into individual clubs. The separate LLM proposal is an unimplemented design draft.
 
-Stage 4 input is `filtered_candidates.csv`. `result_raw_content` is markdown or plain text depending on `content_source`; Playwright text omits link hrefs (`mailto:`, Discord invites), so extraction must not rely on markdown links.
+Stage 4 input is `rendered_results.csv`. It preserves all Stage 3 columns and appends the contact fields below. `result_raw_content` is markdown or plain text depending on `content_source`; Playwright text omits link hrefs (`mailto:`, Discord invites), so extraction must not rely on markdown links. Every input row is written once, including discards, which are not scanned.
 
-Each row represents a club from a result. Each page can have multiple clubs, thus create multiple rows. Each club can also have multiple web results about it, thus each club could have mulitiple rows.
+Each row represents one search result, not necessarily one club. Multiple search results may describe the same club, and directory pages are not split into individual clubs at this stage.
 
 | Column | Type | Stage | Notes |
 | --- | --- | --- | --- |
-| `club_name` | string | 4 | The club name, if any |
-| `unitid` | string | 0 | IPEDS unit ID |
-| `college_name` | string | 0 | IPEDS institution name |
-| `city` | string | 0 | IPEDS city |
-| `website` | string | 0 | IPEDS official website |
-| `result_title` | string | 1 | — |
-| `result_url` | string | 1 | — |
-| `classification` | enum | 4 | one of `club`/`conglam`/`not-a-club` |
-| `school_identifying_terms_found` | string | 4 | Org-identifying terms on page (e.g. "UConn," "Waterloo High School") |
-| `name_variant_matched` | string | 4 | Which alias/abbreviation matched |
-| `contact_signal_tier` | enum | 4 | `email`/`discord`/`vague-wording`/`none` — TODO replaces `has_contact_signal` |
-| `email_found` | string, not bool | 4 | Email found; blank if none |
-| `discord_found` | string, not bool | 4 | Discord link found; blank if none |
-| `contact_context_snippet` | string | 4 | Text around the matched email/Discord/keyword |
+| All Stage 3 columns | — | 0–3 | Preserved, including `decision`; Stage 2 keyword-hit debug fields are absent |
+| `has_contact_signal` | bool | 4 | Whether email, Discord, or contact wording was found; false on unscanned rows |
+| `email_found` | string | 4 | Deduplicated email address(es); blank if none |
+| `discord_found` | string | 4 | Discord invite(s); blank if none |

@@ -1,15 +1,15 @@
-# Stage 2 — `render_candidates.py`
+# Stage 3 — `render_candidates.py`
 
-**Input:** `data/search_results.csv` (Stage 1)
+**Input:** `data/filtered_candidates.csv` (Stage 2)
 
 **Output:** `data/rendered_results.csv`
 
-Re-fetches page content that Stage 1 left blank and refetch some very short pages.
+Re-fetches page content for Stage 2 keep decisions when Stage 1 left it blank or suspiciously short.
 
 - Blank pages are attempted first with Tavily `extract`, then with Playwright.
 - Short pages from `.edu` URLs (see [The `.edu` rule](#the-edu-rule)) are refetched with Playwright only.
 
-Every input row is written to the output (row count unchanged).
+Every input row is written to the output (row count unchanged). Discard rows pass through without Tavily or Playwright calls. The Stage 2 keyword-hit debug columns are omitted; `decision` and all other Stage 2 fields remain.
 
 ## Why this stage exists
 
@@ -19,16 +19,17 @@ JS-heavy club platforms such as Anthology Engage often return blank or script-st
 
 Here is how the input rows are handled:
 
-1. **Sentinel rows** (`result_url == "ERROR"` or `search_query` starting with `NO_RESULTS:`, detected by `search_row_format_util.is_sentinel`) pass through unchanged; `extract_status`, `render_status` and `content_source` stay blank.
-2. **Blank `result_raw_content`:** Tavily `extract` with `EXTRACT_DEPTH = "advanced"`, up to `EXTRACT_MAX_ATTEMPTS` attempts. Only failures are retried (`failed_per_url`, `failed_exception`, `no_response_entry`); `succeeded_empty` means the page itself is empty and is final. It runs on every blank row, even low-quality ones, so all filtering stays in Stage 3.
+1. **Discard decisions** pass through without rendering; `extract_status`, `render_status` and `content_source` stay blank.
+2. **Sentinel rows** (`result_url == "ERROR"` or `search_query` starting with `NO_RESULTS:`, detected by `search_row_format_util.is_sentinel`) are discarded by Stage 2 and pass through with those render fields blank.
+3. **Blank `result_raw_content` on kept rows:** Tavily `extract` with `EXTRACT_DEPTH = "advanced"`, up to `EXTRACT_MAX_ATTEMPTS` attempts. Only failures are retried (`failed_per_url`, `failed_exception`, `no_response_entry`); `succeeded_empty` means the page itself is empty and is final.
    - Its main job is covering transient failures. `advanced` is used because these rows already failed once at search time, so the cheap tier is the least likely to work on them; it is spent on blank rows only.
    - **Unverified:** whether `advanced` renders JS-heavy pages better than the search-time fetch. Tavily documents `search_depth` and `extract_depth` as separate controls on separate endpoints, so don't assume the search call and `extract` behave alike. To find out, run `extract` once with `basic` and once with `advanced` on a few known-blank URLs (UConn, Skidmore) and compare the lengths.
-3. **Playwright runs** on a row if, after step 2, either:
+4. **Playwright runs** on a kept row if, after step 3, either:
    - `result_raw_content` is still blank, or
    - `raw_content_length` is under `SHORT_CONTENT_CHARS` defined in `config.py` and the `result_url` is a `.edu`.
 
    Short but non-blank rows skip `extract` and go straight to Playwright. A row that `extract` rescued but that is still short on a `.edu` URL also goes to Playwright.
-4. All other rows are unchanged.
+5. All other kept rows are unchanged.
 
 Extract and Playwright failures are recorded on the real row, never as sentinels.
 
@@ -47,7 +48,7 @@ Known false positives, accepted because each only costs one unneeded Playwright 
 
 ## Playwright Failure Behaviours
 
-- Headless Chromium, launched **eagerly** at the start of `main()`: after the input header is validated, but before the output file is opened and before any API call. A missing install therefore aborts the run without truncating a previous output or spending credits.
+- Headless Chromium is launched before the output file is opened and before any API call when at least one row is kept. A missing install therefore aborts without truncating a previous output or spending credits. An all-discard file skips browser startup.
 - **Per-URL failure.** A timeout or any other Playwright error sets `render_status` to `failed_per_url` and keeps the existing content.
 - **Browser death.** If a Playwright call fails and the browser is no longer connected, Chromium is relaunched before the next URL. The URL that was in flight is recorded as `failed_per_url` and is not retried.
 - **Aborts.** `RenderAbort` is raised, with a `playwright install chromium` hint, when the browser can't be launched at startup, when a relaunch fails, or when it dies `PLAYWRIGHT_MAX_CONSECUTIVE_CRASHES` times in a row. The cap exists because a systemic problem (out of memory, a broken install) would otherwise silently mark every remaining row `failed_per_url`. A Playwright call that ends with the browser still alive, whether it succeeded or hit an ordinary timeout, resets the count. Rows already written stay flushed.
@@ -79,7 +80,7 @@ Schema is in [`pipeline_data_flow.md`](../pipeline_data_flow.md). Semantics:
 
 ## Code specifics
 
-- Constants in `config.py`: `SEARCH_RESULTS_CSV`, `RENDERED_RESULTS_CSV`, `EXTRACT_DEPTH`, `EXTRACT_MAX_ATTEMPTS`, `EXTRACT_RETRY_SLEEP_S`, `SHORT_CONTENT_CHARS`, `PLAYWRIGHT_TIMEOUT_MS`, `PLAYWRIGHT_MAX_CONSECUTIVE_CRASHES`.
+- Constants in `config.py`: `DEFAULT_FILTERED_CSV`, `RENDERED_RESULTS_CSV`, `EXTRACT_DEPTH`, `EXTRACT_MAX_ATTEMPTS`, `EXTRACT_RETRY_SLEEP_S`, `SHORT_CONTENT_CHARS`, `PLAYWRIGHT_TIMEOUT_MS`, `PLAYWRIGHT_MAX_CONSECUTIVE_CRASHES`.
 - Shared with Stage 1, not redefined here. From `tavily_client_util.py`: `tavily()` (built lazily with `functools.cache`). From `search_row_format_util.py`: `sanitize_for_csv`, the sentinel markers and `is_sentinel`, and `csv.field_size_limit`, which is raised for full-page rows.
 - `render_row(row, renderer, extract=...)` holds the per-row logic and takes its renderer and extract function as arguments, so it can be tested without a network or a browser. `PlaywrightRenderer` owns the browser lifecycle and accepts a `playwright_factory` for the same reason.
 - Each row is written and flushed as it is processed, so a run that aborts or crashes leaves a salvageable partial file.
@@ -87,8 +88,8 @@ Schema is in [`pipeline_data_flow.md`](../pipeline_data_flow.md). Semantics:
 
 ## Scale & budget
 
-- `extract` (`advanced`) credits are spent only on blank rows, at most 2 attempts each.
-- Playwright is the slow step. Measure the trigger rate (blank rows plus short `.edu` rows) on a sample of `search_results.csv` before a full run.
+- `extract` (`advanced`) credits are spent only on kept blank rows, at most 2 attempts each.
+- Playwright is the slow step. Measure the trigger rate (kept blank rows plus kept short `.edu` rows) on a sample of `filtered_candidates.csv` before a full run.
 - Low priority: measure Playwright miss rate for stubs. Sample non-`.edu` rows under `SHORT_CONTENT_CHARS` and read a few. Stubs on vendor hosts (CampusGroups, Engage) that come back short but non-blank are the pages this stage skips by design.
 - `result_raw_content` is written in full, which can make the csv file huge; we probably want to shard the CSV by college when there is a full run.
 

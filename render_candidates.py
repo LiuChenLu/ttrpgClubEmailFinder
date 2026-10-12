@@ -1,8 +1,8 @@
-"""Stage 2: repair blank or suspiciously short page text from Stage 1.
+"""Stage 3: repair blank or suspiciously short page text from Stage 2.
 
-Reads search_results.csv and writes rendered_results.csv with the same rows in
-the same order; sentinel rows pass through untouched. A row's page text is
-repaired in up to two steps:
+Reads filtered_candidates.csv and writes rendered_results.csv with the same
+rows in the same order. Discarded rows pass through without rendering; kept
+rows have their page text repaired in up to two steps:
 
   1. Blank text gets a Tavily extract(), retrying failures only.
   2. Text that is still blank, or that is non-blank but short on a .edu URL,
@@ -12,9 +12,8 @@ Playwright text is plain text, not markdown, so hrefs hidden behind link text
 (mailto:, Discord invites) are gone. content_source records where each row's
 text came from, so later stages never have to guess its format.
 
-Chromium is launched before the output file is opened and before any API call.
-A missing install therefore aborts the run without truncating a previous
-output or spending credits.
+When there are kept rows, Chromium is launched before the output file is opened
+and before any API call. An all-discard input needs no browser startup.
 
 Setup:
     pip install tavily-python python-dotenv playwright
@@ -25,10 +24,11 @@ Set TTRPG_DEBUG=1 in .env for per-row extract() and Playwright logging.
 """
 
 from __future__ import annotations
+from contextlib import nullcontext
 from config import (
     EXTRACT_DEPTH, EXTRACT_MAX_ATTEMPTS, EXTRACT_RETRY_SLEEP_S,
     PLAYWRIGHT_MAX_CONSECUTIVE_CRASHES, PLAYWRIGHT_TIMEOUT_MS,
-    RAW_CONTENT_FORMAT, RENDERED_RESULTS_CSV, SEARCH_RESULTS_CSV,
+    RAW_CONTENT_FORMAT, DEFAULT_FILTERED_CSV, RENDERED_RESULTS_CSV,
     SHORT_CONTENT_CHARS,
 )
 from search_row_format_util import is_sentinel, sanitize_for_csv
@@ -48,14 +48,15 @@ logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 logger = logging.getLogger("render_candidates")
 logger.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
 
-# Columns Stage 1's output must have. The rest are carried through untouched.
+# Columns Stage 2's output must have. Keyword evidence is required by the
+# handoff contract but deliberately omitted from this stage's output.
 REQUIRED_INPUT_COLUMNS = [
+    "decision",
     "result_url", "search_query", "raw_content_status",
     "raw_content_length", "result_raw_content",
 ]
-
 # Columns this stage adds. If the input already has any of them it is not a
-# current Stage 1 output (an old one carried extract_status), and writing it
+# current Stage 2 output, and writing it
 # back out would duplicate the column.
 NEW_FIELDNAMES = ["extract_status", "render_status", "content_source"]
 
@@ -294,13 +295,16 @@ class PlaywrightRenderer:
 
 
 def render_row(row: dict, renderer, extract=extract_with_retries) -> dict:
-    """The Stage 2 version of one Stage 1 row.
+    """The Stage 3 version of one Stage 2 row.
 
     `renderer` is anything with fetch_text(url) -> str (a PlaywrightRenderer).
     Extract and Playwright failures are recorded on the row, never as
     sentinels. Only RenderAbort escapes, and the caller must let it.
     """
     out = dict(row)
+    if row["decision"] != "keep":
+        out.update(extract_status="", render_status="", content_source="")
+        return out
     if is_sentinel(row):
         out.update(extract_status="", render_status="", content_source="")
         return out
@@ -350,7 +354,9 @@ def render_row(row: dict, renderer, extract=extract_with_retries) -> dict:
 
 
 def output_fieldnames(input_fieldnames: Sequence[str]) -> list[str]:
-    """The input columns, plus the three this stage adds, in the order of
+    """The input columns except Stage 2 debug fields, plus this stage's fields.
+
+    Columns follow the order of
     pipeline_data_flow.md: extract_status right after raw_content_status,
     render_status and content_source last."""
     names = []
@@ -368,27 +374,39 @@ def check_input_columns(fieldnames: Sequence[str], path: str) -> None:
     already = [c for c in NEW_FIELDNAMES if c in fieldnames]
     if already:
         raise ValueError(
-            f"{path} already has Stage 2 columns {already}, so it is not a "
-            "current Stage 1 output."
+            f"{path} already has Stage 3 columns {already}, so it is not a "
+            "current Stage 2 output."
         )
 
 
 def main(
-    input_csv: str = SEARCH_RESULTS_CSV, output_csv: str = RENDERED_RESULTS_CSV
+    input_csv: str = DEFAULT_FILTERED_CSV, output_csv: str = RENDERED_RESULTS_CSV
 ) -> None:
     with open(input_csv, newline="", encoding="utf-8") as f_in:
         reader = csv.DictReader(f_in)
         fieldnames = reader.fieldnames or []
 
-        # Both checks come before the output file is opened, so a bad input or
-        # a missing Chromium can't truncate a previous good output.
+        # Validate decisions before opening the output or starting the browser.
         check_input_columns(fieldnames, input_csv)
+        has_keeps = False
+        for row in reader:
+            if row["decision"] not in {"keep", "discard"}:
+                raise ValueError(
+                    f"{input_csv} has invalid decision {row['decision']!r}"
+                )
+            has_keeps = has_keeps or row["decision"] == "keep"
+        f_in.seek(0)
+        reader = csv.DictReader(f_in)
 
-        # Launched now rather than on the first row that needs it: a missing
-        # install would otherwise only surface after Tavily credits are spent.
-        with PlaywrightRenderer() as renderer:
+        # Validate the browser before extract calls when any row will be used.
+        renderer_context = PlaywrightRenderer() if has_keeps else nullcontext(None)
+        with renderer_context as renderer:
             with open(output_csv, "w", newline="", encoding="utf-8") as f_out:
-                writer = csv.DictWriter(f_out, fieldnames=output_fieldnames(fieldnames))
+                writer = csv.DictWriter(
+                    f_out,
+                    fieldnames=output_fieldnames(fieldnames),
+                    extrasaction="ignore",
+                )
                 writer.writeheader()
 
                 for row in reader:

@@ -1,4 +1,4 @@
-"""The Tavily client, shared by the Stage 1 and Stage 2 scripts.
+"""The Tavily client, shared by the Stage 1 and Stage 3 scripts.
 
 Kept out of config.py on purpose: config.py has no dependency on the tavily
 package and reads no files at import time, so any consumer can import the real

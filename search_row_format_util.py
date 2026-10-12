@@ -1,4 +1,4 @@
-"""The conventions of the search-result rows Stage 1 writes and Stage 2 carries on.
+"""The conventions of the search-result rows Stage 1 writes and later stages carry on.
 
 Covers how page text is sanitized for CSV, and how sentinel rows (a failure
 logged in place of a result) are marked and detected. The markers are shared

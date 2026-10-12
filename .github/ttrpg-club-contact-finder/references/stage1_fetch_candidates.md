@@ -4,15 +4,15 @@
 
 Tavily search only, one row per search result per college, except for sentinel rows used to log error. It deduplicates the results returned for each college. When deduplicating, the snippets are appended together. This is because snippets are not guaranteed to be the same across multiple search queries, and we later look for keywords in any of the snippets.
 
-Raw content comes from the search call (`include_raw_content`). [Stage 2](stage2_render_candidates.md) repairs blank or suspiciously short content.
+Raw content comes from the search call (`include_raw_content`). [Stage 3](stage3_render_candidates.md) repairs blank or suspiciously short content after [Stage 2](stage2_filter_candidates.md) filters candidates.
 
 ## Pitfalls to know before touching search/fetch logic
 
 1. **`website` (IPEDS official site) is not a domain filter.** Club pages routinely live off that domain.
-2. **Vendor-hosted club pages.** Many clubs live on platforms like CampusGroups, Modern Campus Involve, Anthology Engage, Corq, or Lounge, not the university's own domain. This is why fetching must not be restricted to `.edu`. The only `.edu` condition is Stage 2's short-content trigger. (Detecting these pages by header markers like "Powered by CampusGroups" is a classification signal, not a fetch concern — see Stage 3.)
+2. **Vendor-hosted club pages.** Many clubs live on platforms like CampusGroups, Modern Campus Involve, Anthology Engage, Corq, or Lounge, not the university's own domain. This is why fetching must not be restricted to `.edu`. The only `.edu` condition is Stage 3's short-content trigger. Detecting these pages by header markers is not currently implemented.
 3. **Multi-campus systems** (SUNY, UC, Penn State) — search queries search for campuses (e.g. Tricoci University of Beauty Culture-Elgin) rather than specific institutions. This allows for us to look for clubs that may only exist on a specific campus.
 4. **Must check full results.** Even if we see an email, Discord, or other contact signal in the snippet, we still need to check the full result. For example, conglam pages can surface an email address in the snippet, but the email can be for a different club.
-5. **JS-heavy pages come back blank or stubbed.** Tavily can't render pages like Anthology Engage (UConn and Skidmore return nothing; MIT's directory renders fine). Stage 2 handles these.
+5. **JS-heavy pages come back blank or stubbed.** Tavily can't render pages like Anthology Engage (UConn and Skidmore return nothing; MIT's directory renders fine). Stage 3 handles these for candidates kept by Stage 2.
 
 ## Sentinel rows
 
@@ -37,8 +37,8 @@ Here are example rows that they would write:
 - Within a college, error rows are written before real rows.
 - `NO_RESULTS` is suppressed if any query raised, even if the other queries returned nothing.
 - `from_tavily` drops hits without a `url`, so a college whose hits all lack one gets `NO_RESULTS`.
-- `extract()` and Playwright failures are never sentinels; Stage 2 records them in `extract_status` and `render_status` on real rows.
-- Detection: `result_url == "ERROR"` marks an error row, and a `search_query` starting with `NO_RESULTS:` marks a no-results row. Real rows always have a non-blank `raw_content_status`. The markers (`ERROR_URL`, `NO_RESULTS_PREFIX`) and the detector `is_sentinel(row)` live in `search_row_format_util.py`, so this stage's writer and Stage 2's reader share one definition. Stage 3 keeps its own local check (blank or `ERROR` `result_url`), which is equivalent on real data.
+- `extract()` and Playwright failures are never sentinels; Stage 3 records them in `extract_status` and `render_status` on kept rows.
+- Detection: `result_url == "ERROR"` marks an error row, and a `search_query` starting with `NO_RESULTS:` marks a no-results row. Real rows always have a non-blank `raw_content_status`. The markers (`ERROR_URL`, `NO_RESULTS_PREFIX`) and the detector `is_sentinel(row)` live in `search_row_format_util.py`, so this stage's writer and Stage 3's reader share one definition. Stage 2 also discards sentinels by their blank or `ERROR` URL.
 
 ### Known gaps
 
@@ -57,7 +57,7 @@ Here are example rows that they would write:
 
 ## Code specifics
 
-- Shared with Stage 2, not defined here. `tavily_client_util.py` holds the Tavily client `tavily()` (built lazily with `functools.cache`, so importing doesn't require an API key; importing the module also loads `.env`). `search_row_format_util.py` holds `sanitize_for_csv`, the sentinel markers, and `csv.field_size_limit` (raised for full-page-text rows; an import side effect). Don't copy them back into this script.
+- Shared with Stage 3, not defined here. `tavily_client_util.py` holds the Tavily client `tavily()` (built lazily with `functools.cache`, so importing doesn't require an API key; importing the module also loads `.env`). `search_row_format_util.py` holds `sanitize_for_csv`, the sentinel markers, and `csv.field_size_limit` (raised for full-page-text rows; an import side effect). Don't copy them back into this script.
 
 ## Scale & budget
 
