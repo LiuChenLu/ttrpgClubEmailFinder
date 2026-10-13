@@ -10,6 +10,8 @@ Each row represents an IPEDS institution.
 | --- | --- | --- | --- |
 | `unitid` | string | 0 | IPEDS unit ID |
 | `college_name` | string | 0 | IPEDS institution name |
+| `aliases` | string | 0 | IPEDS alternate institution names (`IALIAS`) |
+| `generated_aliases` | string | 0 | Generated shortened institution-name variants |
 | `city` | string | 0 | IPEDS city |
 | `distance` | float | 0 | IPEDS distance from Hartford |
 | `website` | string | 0 | IPEDS official website |
