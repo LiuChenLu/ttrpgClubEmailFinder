@@ -1,11 +1,10 @@
-"""Stage 2: record keyword signals for each Stage 1 candidate and decide keep/discard.
+"""Stage 2: decide keep/discard for each Stage 1 candidate before page rendering.
 
-A row is kept if its result title + snippet hit at least one club OR ttrpg
-keyword. That is the only keyword gate: the page text is neither read nor
-copied to the output.
+This file is the shell: it reads Stage 1's CSV, runs each row through
+rule_based_filtering, and writes one output row per input row.
 
 Discarded rows are still written (decision="discard") so the gate can be
-audited. NO_RESULTS/ERROR rows and PDF results are always discarded.
+audited.
 
 Reads only the input CSV (Stage 1's by default); needs no network access or
 API key.
@@ -14,22 +13,15 @@ API key.
 from __future__ import annotations
 
 import csv
-from urllib.parse import urlsplit
 
-from config import (
-    CLUB_KEYWORDS_PATH, SEARCH_RESULTS_CSV, DEFAULT_FILTERED_CSV,
-    TTRPG_KEYWORDS_PATH, load_word_list,
-)
+import rule_based_filtering
+from config import SEARCH_RESULTS_CSV, DEFAULT_FILTERED_CSV
 
 # The input still carries whole pages in result_raw_content. This stage never
 # reads that column, but csv.DictReader parses every field of every row, so a
 # page over csv's default 128 KB field limit would make the reader raise anyway.
 # Remove this once Stage 1 stops writing page text.
 csv.field_size_limit(2**31 - 1)
-
-KEYWORD_FIELDNAMES = [
-    "club_keywords_found_in_snippet", "ttrpg_keywords_found_in_snippet",
-]
 
 # Stage 1 fields are retained so Stage 3 can render kept rows from this audit.
 SEARCH_FIELDNAMES = [
@@ -40,68 +32,16 @@ SEARCH_FIELDNAMES = [
 
 # Keyword hits are debugging/audit fields for this stage; rendering drops them.
 FILTERED_FIELDNAMES = [
-    "decision", *SEARCH_FIELDNAMES, *KEYWORD_FIELDNAMES,
+    "decision", *SEARCH_FIELDNAMES, *rule_based_filtering.KEYWORD_FIELDNAMES,
 ]
 
 INPUT_FIELDNAMES = SEARCH_FIELDNAMES
-
-# TODO: special-case club hosting vendors, each identifiable from the page
-# source: CampusGroups ("Powered by CampusGroups"), Modern Campus Involve,
-# Anthology Engage, Lounge, Corq. This is a keep-signal, so it has to run
-# before the discard rules in decide(). Stage 3 no longer reads page text, so
-# this would have to match on result_url instead, or move to a stage that has
-# the page.
-
-# Directory pages (an A-Z list of a school's clubs) are deliberately kept: they
-# go through the snippet gate like any other result, so a club keyword alone
-# passes one, whether or not it lists a TTRPG club. Stage 4 splits out the
-# individual clubs, so Stage 2 doesn't need to detect them.
-
-
-def find_keywords(text: str, keywords: list[str]) -> list[str]:
-    lowered = text.lower()
-    return [kw for kw in keywords if kw in lowered]
-
-
-def is_sentinel(row: dict) -> bool:
-    # NO_RESULTS rows have a blank result_url; ERROR rows have "ERROR" there
-    # and hold the exception message in result_title.
-    return row["result_url"] in ("", "ERROR")
-
-
-def is_pdf_url(row: dict) -> bool:
-    return urlsplit(row["result_url"]).path.lower().endswith(".pdf")
-
-
-def keyword_columns(row: dict, ttrpg_kw: list[str], club_kw: list[str]) -> dict:
-    # Sentinel rows aren't pages, so the exception message in an ERROR row's
-    # result_title must not be scanned as if it were a title.
-    if is_sentinel(row):
-        return dict.fromkeys(KEYWORD_FIELDNAMES, "")
-
-    snippet = f"{row['result_title']} {row['result_snippet']}"
-    return {
-        "club_keywords_found_in_snippet": "; ".join(find_keywords(snippet, club_kw)),
-        "ttrpg_keywords_found_in_snippet": "; ".join(find_keywords(snippet, ttrpg_kw)),
-    }
-
-
-def decide(row: dict, keywords: dict) -> str:
-    if is_sentinel(row) or is_pdf_url(row):
-        return "discard"
-
-    snippet_gate = (
-        keywords["club_keywords_found_in_snippet"]
-        or keywords["ttrpg_keywords_found_in_snippet"]
-    )
-    return "keep" if snippet_gate else "discard"
 
 
 def main(
     input_csv: str = SEARCH_RESULTS_CSV, output_csv: str = DEFAULT_FILTERED_CSV
 ) -> None:
-    ttrpg_kw = load_word_list(TTRPG_KEYWORDS_PATH)
-    club_kw = load_word_list(CLUB_KEYWORDS_PATH)
+    keyword_lists = rule_based_filtering.load_keyword_lists()
 
     with open(input_csv, newline="", encoding="utf-8") as f_in:
         reader = csv.DictReader(f_in)
@@ -119,8 +59,9 @@ def main(
             writer.writeheader()
 
             for row in reader:
-                keywords = keyword_columns(row, ttrpg_kw, club_kw)
-                writer.writerow({**row, **keywords, "decision": decide(row, keywords)})
+                writer.writerow(
+                    {**row, **rule_based_filtering.apply_rules(row, keyword_lists)}
+                )
 
 
 if __name__ == "__main__":
