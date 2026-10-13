@@ -26,6 +26,8 @@ Each row represents a search result except for sentinel rows used to log error.
 | --- | --- | --- | --- |
 | `unitid` | string | 0 | IPEDS unit ID |
 | `college_name` | string | 0 | IPEDS institution name |
+| `aliases` | string | 0 | IPEDS alternate institution names (`IALIAS`) |
+| `generated_aliases` | string | 0 | Generated shortened institution-name variants |
 | `city` | string | 0 | IPEDS city |
 | `website` | string | 0 | IPEDS official website |
 | `search_query` | string | 1 | Query of the best scoring search result across queries |
@@ -48,6 +50,8 @@ Each row represents a search result except for sentinel rows used to log error.
 | `decision` | enum | 2 | `keep` or `discard`; sentinel and PDF rows are discarded |
 | `unitid` | string | 0 | IPEDS unit ID |
 | `college_name` | string | 0 | IPEDS institution name |
+| `aliases` | string | 0 | IPEDS alternate institution names (`IALIAS`) |
+| `generated_aliases` | string | 0 | Generated shortened institution-name variants |
 | `city` | string | 0 | IPEDS city |
 | `website` | string | 0 | IPEDS official website |
 | `search_query` | string | 1 | Query of the best scoring search result across queries |
@@ -72,6 +76,8 @@ Each row represents a search result except for sentinel rows used to log error.
 | `decision` | enum | 2 | `keep` or `discard`; controls whether Stage 3 renders the row |
 | `unitid` | string | 0 | IPEDS unit ID |
 | `college_name` | string | 0 | IPEDS institution name |
+| `aliases` | string | 0 | IPEDS alternate institution names (`IALIAS`) |
+| `generated_aliases` | string | 0 | Generated shortened institution-name variants |
 | `city` | string | 0 | IPEDS city |
 | `website` | string | 0 | IPEDS official website |
 | `search_query` | string | 1 | Query of the best scoring search result across queries |
@@ -96,7 +102,7 @@ Each row represents one search result, not necessarily one club. Multiple search
 
 | Column | Type | Stage | Notes |
 | --- | --- | --- | --- |
-| All Stage 3 columns | — | 0–3 | Preserved, including `decision`; Stage 2 keyword-hit debug fields are absent |
+| All Stage 3 columns | — | 0–3 | Preserved, including `decision`, `aliases`, and `generated_aliases`; Stage 2 keyword-hit debug fields are absent |
 | `has_contact_signal` | bool | 4 | Whether email, Discord, or contact wording was found; false on unscanned rows |
 | `email_found` | string | 4 | Deduplicated email address(es); blank if none |
 | `discord_found` | string | 4 | Discord invite(s); blank if none |

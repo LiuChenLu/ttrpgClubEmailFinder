@@ -12,6 +12,8 @@ def filtered_row(decision="discard"):
         "decision": decision,
         "unitid": "1",
         "college_name": "Example College",
+        "aliases": "Example U",
+        "generated_aliases": "Example",
         "city": "Town",
         "website": "https://example.edu",
         "search_query": "tabletop club",
@@ -31,6 +33,8 @@ def test_output_fieldnames_keep_decision_but_drop_keyword_debug_fields():
     fields = output_fieldnames(FILTERED_FIELDNAMES)
 
     assert "decision" in fields
+    assert "aliases" in fields
+    assert "generated_aliases" in fields
     assert "club_keywords_found_in_snippet" not in fields
     assert "ttrpg_keywords_found_in_snippet" not in fields
 
@@ -86,4 +90,6 @@ def test_main_all_discards_skips_browser_and_omits_debug_columns(tmp_path, monke
     assert "ttrpg_keywords_found_in_snippet" not in reader.fieldnames
     assert len(rows) == 1
     assert rows[0]["decision"] == "discard"
+    assert rows[0]["aliases"] == "Example U"
+    assert rows[0]["generated_aliases"] == "Example"
     assert rows[0]["render_status"] == ""

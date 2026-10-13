@@ -25,8 +25,9 @@ csv.field_size_limit(2**31 - 1)
 
 # Stage 1 fields are retained so Stage 3 can render kept rows from this audit.
 SEARCH_FIELDNAMES = [
-    "unitid", "college_name", "city", "website", "search_query",
-    "result_title", "result_url", "result_snippet",
+    "unitid", "college_name", "aliases", "generated_aliases", "city",
+    "website", "search_query", "result_title", "result_url",
+    "result_snippet",
     "raw_content_status", "raw_content_length", "result_raw_content",
 ]
 

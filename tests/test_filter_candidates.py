@@ -3,8 +3,9 @@ import csv
 import pytest
 
 from filter_candidates import (
-    FILTERED_FIELDNAMES, SEARCH_FIELDNAMES, decide, main,
+    FILTERED_FIELDNAMES, SEARCH_FIELDNAMES, main,
 )
+from rule_based_filtering import decide
 
 
 KEYWORDS_WITH_ALL_GATES_PASSED = {
@@ -48,6 +49,7 @@ def test_main_preserves_search_rows_and_writes_keyword_audit(tmp_path):
     rows = [
         {
             "unitid": "1", "college_name": "Example College", "city": "Town",
+            "aliases": "Example U", "generated_aliases": "Example",
             "website": "https://example.edu", "search_query": "club search",
             "result_title": "Tabletop Gaming Club", "result_url": "https://example.edu/club",
             "result_score": "0.9", "result_snippet": "Join our club",
@@ -56,6 +58,7 @@ def test_main_preserves_search_rows_and_writes_keyword_audit(tmp_path):
         },
         {
             "unitid": "2", "college_name": "Other College", "city": "Town",
+            "aliases": "", "generated_aliases": "",
             "website": "https://other.edu", "search_query": "other search",
             "result_title": "Dining schedule", "result_url": "https://other.edu/dining",
             "result_score": "0.2", "result_snippet": "Dining hall hours",
@@ -64,6 +67,7 @@ def test_main_preserves_search_rows_and_writes_keyword_audit(tmp_path):
         },
         {
             "unitid": "3", "college_name": "No Results College", "city": "Town",
+            "aliases": "No Results U", "generated_aliases": "No Results",
             "website": "https://none.edu", "search_query": "NO_RESULTS: tabletop club",
             "result_title": "", "result_url": "", "result_score": "",
             "result_snippet": "", "raw_content_status": "", "raw_content_length": "",
@@ -84,6 +88,8 @@ def test_main_preserves_search_rows_and_writes_keyword_audit(tmp_path):
 
     assert [row["decision"] for row in result_rows] == ["keep", "discard", "discard"]
     assert result_rows[0]["search_query"] == rows[0]["search_query"]
+    assert result_rows[0]["aliases"] == rows[0]["aliases"]
+    assert result_rows[0]["generated_aliases"] == rows[0]["generated_aliases"]
     assert result_rows[0]["result_raw_content"] == rows[0]["result_raw_content"]
     assert result_rows[0]["club_keywords_found_in_snippet"]
     assert result_rows[0]["ttrpg_keywords_found_in_snippet"]

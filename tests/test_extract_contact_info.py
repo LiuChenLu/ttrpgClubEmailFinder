@@ -4,7 +4,8 @@ import extract_contact_info
 
 
 INPUT_FIELDS = [
-    "decision", "unitid", "college_name", "result_url", "result_snippet",
+    "decision", "unitid", "college_name", "aliases", "generated_aliases",
+    "result_url", "result_snippet",
     "result_raw_content", "content_source",
 ]
 
@@ -17,6 +18,8 @@ def test_main_scans_keeps_and_preserves_all_rendered_rows(tmp_path):
             "decision": "keep",
             "unitid": "1",
             "college_name": "Example College",
+            "aliases": "Example U",
+            "generated_aliases": "Example",
             "result_url": "https://example.edu/club",
             "result_snippet": "Email club@example.edu",
             "result_raw_content": "Contact us at club@example.edu or discord.gg/club123",
@@ -26,6 +29,8 @@ def test_main_scans_keeps_and_preserves_all_rendered_rows(tmp_path):
             "decision": "discard",
             "unitid": "2",
             "college_name": "Other College",
+            "aliases": "",
+            "generated_aliases": "",
             "result_url": "https://other.edu/page",
             "result_snippet": "Email discard@example.edu",
             "result_raw_content": "Contact discard@example.edu",
@@ -46,6 +51,8 @@ def test_main_scans_keeps_and_preserves_all_rendered_rows(tmp_path):
     assert reader.fieldnames == INPUT_FIELDS + extract_contact_info.NEW_FIELDNAMES
     assert [row["decision"] for row in result_rows] == ["keep", "discard"]
     assert result_rows[0]["has_contact_signal"] == "True"
+    assert result_rows[0]["aliases"] == "Example U"
+    assert result_rows[0]["generated_aliases"] == "Example"
     assert result_rows[0]["email_found"] == "club@example.edu"
     assert result_rows[0]["discord_found"] == "discord.gg/club123"
     assert result_rows[1]["has_contact_signal"] == "False"
