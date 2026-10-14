@@ -43,6 +43,26 @@ def test_non_pdf_result_remains_eligible_when_keyword_gates_pass(url):
     assert decide(row, KEYWORDS_WITH_ALL_GATES_PASSED) == "keep"
 
 
+@pytest.mark.parametrize(
+    "term",
+    [
+        "blog", "news", "article", "dailydigest", "stories", "story",
+        "rsvp", "event", "calendar",
+        "store", "shop", "market",
+    ],
+)
+def test_low_relevance_url_types_are_discarded_even_when_keyword_gates_pass(term):
+    row = {"result_url": f"https://www.school.com/{term}/club"}
+
+    assert decide(row, KEYWORDS_WITH_ALL_GATES_PASSED) == "discard"
+
+
+def test_url_filtering_is_case_insensitive():
+    row = {"result_url": "https://www.school.com/News/club"}
+
+    assert decide(row, KEYWORDS_WITH_ALL_GATES_PASSED) == "discard"
+
+
 def test_main_preserves_search_rows_and_writes_keyword_audit(tmp_path):
     input_csv = tmp_path / "search_results.csv"
     output_csv = tmp_path / "filtered_candidates.csv"
