@@ -1,8 +1,12 @@
 facebook.com
 reddit.com
 instagram.com
+substack.com
 yelp.com
 wikipedia.org
+fandom.com
+enworld.org
+tvtropes.org
 tiktok.com
 vaia.com
 nerdculture.com
@@ -12,6 +16,8 @@ linkedin.com
 youtube.com
 groupfinder.com
 x.com
+drivethrurpg.com
+scribd.com
 pinterest.com
 collegeconfidential.com
 sciencedirect.com
