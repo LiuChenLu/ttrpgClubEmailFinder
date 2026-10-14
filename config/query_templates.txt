@@ -1,3 +1,1 @@
-{name} tabletop gaming club
-{name} board game club game night
-{name} TTRPG D&D role playing club
+{name} tabletop gaming board game ttrpg d&d role playing club
