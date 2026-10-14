@@ -63,6 +63,7 @@ def url_filtering_rules(url: str) -> bool:
         "rsvp", "event", "calendar",
         # storefronts
         "store", "shop", "market",
+        # not filtered: library
     )
     lowered_url = url.lower()
     has_excluded_term = any(term in lowered_url for term in excluded_terms)
