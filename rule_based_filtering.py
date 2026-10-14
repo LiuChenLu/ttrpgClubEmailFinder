@@ -2,7 +2,8 @@
 
 A row is kept if its result title + snippet hit at least one club OR ttrpg
 keyword. That is the only keyword gate: the page text (result_raw_content) is
-never read. NO_RESULTS/ERROR rows and PDF results are always discarded.
+never read. NO_RESULTS/ERROR rows, PDF results, and low-relevance URL types are
+always discarded.
 
 Matching is a case-insensitive substring test, not a regex: each line of a
 keyword file is a literal string, so regex syntax in one matches literally.
@@ -53,8 +54,21 @@ def is_sentinel(row: dict) -> bool:
     return row["result_url"] in ("", "ERROR")
 
 
-def is_pdf_url(row: dict) -> bool:
-    return urlsplit(row["result_url"]).path.lower().endswith(".pdf")
+def url_filtering_rules(url: str) -> bool:
+    """Return whether a URL matches a low-relevance content or storefront term."""
+    excluded_terms = (
+        # news articles
+        "blog", "news", "article", "dailydigest", "stories", "story",
+        # one off events, often hosted by clubs not related to ttrpg
+        "rsvp", "event", "calendar",
+        # storefronts
+        "store", "shop", "market",
+    )
+    lowered_url = url.lower()
+    has_excluded_term = any(term in lowered_url for term in excluded_terms)
+
+    is_pdf_url = urlsplit(url).path.lower().endswith(".pdf")
+    return has_excluded_term or is_pdf_url
 
 
 def keyword_columns(row: dict, ttrpg_kw: list[str], club_kw: list[str]) -> dict:
@@ -84,7 +98,10 @@ def keyword_columns(row: dict, ttrpg_kw: list[str], club_kw: list[str]) -> dict:
 
 
 def decide(row: dict, keywords: dict) -> str:
-    if is_sentinel(row) or is_pdf_url(row):
+    if (
+        is_sentinel(row)
+        or url_filtering_rules(row["result_url"])
+    ):
         return "discard"
 
     snippet_gate = (
