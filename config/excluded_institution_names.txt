@@ -4,6 +4,7 @@ nail
 cosmetology
 skin
 barber
+beauty
 makeup
 esthetic
 aesthetic
@@ -14,16 +15,23 @@ acupuncture
 aeronautic
 aerospace
 automotive
+technical
 machinist
 trade
 mechanic
+mechanical
+mechanics
 messiah
 christ
+christian
 theology
 theologic
+theological
 culinary
 bible
 seminary
+methodist
+catholic
 yeshiva
 jewish
 hebrew
@@ -32,3 +40,5 @@ religious
 rabbi
 jerusalem
 judaism
+online
+digital
