@@ -41,12 +41,12 @@ For each search result, the model is given:
 The output schema is a JSONL file with one row per result.
 
 ```json
-{ "page_type": "tabletop_club | conglomerate | other",
-  "page_type_certainty": "clear | probable | unsure",
+{ "page_type": "tabletop_club | conglomerate | other | unknown",
+  "page_type_certainty": "clear | probable",
   "title_evidence_for_page_type": "[substring]", 
   "url_evidence_for_page_type": "[substring]",
-  "institution": "supported | unknown | not_supported",
-  "institution_certainty": "clear | probable | unsure",
+  "institution": "supported | not_supported | unknown",
+  "institution_certainty": "clear | probable",
   "title_evidence_for_institution": "[substring]", 
   "url_evidence_for_institution": "[substring]"}
 ```
@@ -63,11 +63,12 @@ Apply in order. The first match wins.
 2. `tabletop_club`: one organization focused on tabletop RPGs, or on several
    tabletop games (board, card, miniature). A single-TTRPG club (D&D only)
    qualifies. A club for a single non-RPG game does not.
-3. `other`: everything else.
+3. `other`: everything else, such as a library page, a blog, a store, etc.
+4. `unknown`: not possible to tell.
 
 ### institution
 
-- `supported`:  or the target's name or an alias appears in the URL or title
+- `supported`: match the target's name or an alias in the URL or title
 - `not_supported`: the URL or title names a different institution or clearly
   unaffiliated with any institution
 - `unknown`: not possible to tell
@@ -79,8 +80,9 @@ in the input as sent, ignoring case. It is empty when nothing matched.
 
 ## Downstream use
 
-Code drops a result when `page_type` is `other` with sufficient `type_certainty`,
-or when `institution` is `not_supported`. Every other result goes to Stage 3.
+Code drops a result when `page_type` is `other` or when `institution` is `not_supported`.
+Every other result goes to Stage 3 including `unknown`. These are both tunable on
+`*_certainty` and `*_evidence_for_*` fields in code.
 
 A false drop loses a club page permanently. A false keep costs one render.
 Therefore:
@@ -114,6 +116,7 @@ Therefore:
 ### Institution cases
 
 | Case | institution | Note |
+| --- | --- | --- |
 | TTRPG club for a campus of the same institution (e.g. ttrpg club for the Manchester campus of CT State when we're searching for Gateway campus) | `supported` | clubs are deduplicated later, this is harmless to keep |
 | TTRPG club for the overall institution when searching a campus of the institution (e.g. club listing for CT Stat when we're searching for Manchester campus) | `supported` | clubs are deduplicated later, this is harmless to keep |
 | Community group with no student affiliation (game store, library) | `not_supported` | |
@@ -140,7 +143,7 @@ output {
   "url_evidence_for_page_type": "tabletop-games-club",
   "institution": "supported",
   "institution_certainty": "clear",
-  "title_evidence_for_institution": "Camplain College",
+  "title_evidence_for_institution": "Champlain College",
   "url_evidence_for_institution": "champlain.edu"
 }
 ```
@@ -159,7 +162,7 @@ output {
   "page_type": "conglomerate",
   "page_type_certainty": "clear",
   "title_evidence_for_page_type": "student organizations",
-  "url_evidence_for_page_type": "stduent-organizations",
+  "url_evidence_for_page_type": "student-organizations",
   "institution": "supported",
   "institution_certainty": "clear",
   "title_evidence_for_institution": "Northwest State Community College",
@@ -180,7 +183,7 @@ input {
 output {
   "page_type": "tabletop_club",
   "page_type_certainty": "probable",
-  "title_evidence_for_page_type": "assasins' guild",
+  "title_evidence_for_page_type": "assassins' guild",
   "url_evidence_for_page_type": "",
   "institution": "supported",
   "institution_certainty": "clear",
@@ -226,10 +229,10 @@ output {
   "page_type_certainty": "clear",
   "title_evidence_for_page_type": "mahjong club",
   "url_evidence_for_page_type": "mahjong-club",
-  "institution": "supported",
-  "institution_certainty": "clear",
-  "title_evidence_for_institution": "Tufts",
-  "url_evidence_for_institution": "tufts"
+  "institution": "not_supported",
+  "institution_certainty": "probable",
+  "title_evidence_for_institution": "Tufts University"
+  "url_evidence_for_institution": "tufts.edu"
 }
 ```
 
