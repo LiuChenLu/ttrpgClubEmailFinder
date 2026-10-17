@@ -3,7 +3,8 @@ import csv
 import pytest
 
 import render_candidates
-from filter_candidates import FILTERED_FIELDNAMES
+import rule_based_filtering
+from rule_based_filtering import FILTERED_FIELDNAMES
 from render_candidates import ContentSource, ExtractStatus, output_fieldnames, render_row
 
 
@@ -85,6 +86,7 @@ def test_main_all_discards_skips_browser_and_omits_debug_columns(tmp_path, monke
         reader = csv.DictReader(f_in)
         rows = list(reader)
 
+    assert reader.fieldnames is not None
     assert "decision" in reader.fieldnames
     assert "club_keywords_found_in_snippet" not in reader.fieldnames
     assert "ttrpg_keywords_found_in_snippet" not in reader.fieldnames

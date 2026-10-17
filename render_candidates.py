@@ -390,10 +390,6 @@ def main(
         check_input_columns(fieldnames, input_csv)
         has_keeps = False
         for row in reader:
-            if row["decision"] not in {"keep", "discard"}:
-                raise ValueError(
-                    f"{input_csv} has invalid decision {row['decision']!r}"
-                )
             has_keeps = has_keeps or row["decision"] == "keep"
         f_in.seek(0)
         reader = csv.DictReader(f_in)
