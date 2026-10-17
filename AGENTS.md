@@ -54,7 +54,7 @@ source .venv/bin/activate
 python -m pytest -q --ignore=tests/test_search_providers.py
 ```
 
-Known state: 2 tests in `tests/test_render_candidates.py` fail, and
+Known state: 1 test in `tests/test_render_candidates.py` fails, and
 `tests/test_search_providers.py` is stale. Both are in
 [docs/known_bugs.md](docs/known_bugs.md). Don't add new failures.
 

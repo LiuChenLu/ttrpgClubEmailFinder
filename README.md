@@ -53,7 +53,7 @@ playwright install chromium
 python -m pytest -q --ignore=tests/test_search_providers.py
 ```
 
-Two tests currently fail and one test file is stale; both are tracked in
+One test currently fails and one test file is stale; both are tracked in
 [`docs/known_bugs.md`](docs/known_bugs.md).
 
 ## Repository layout

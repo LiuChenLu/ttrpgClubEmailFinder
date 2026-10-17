@@ -13,8 +13,8 @@ of it is implemented.
 
 Rows with `decision` exactly `keep` are scanned for emails, Discord invite URLs,
 and contact-related words. All other rows (`discard_*`) are passed through with
-blank/false contact fields. Stage 2's keyword-hit debug columns are passed
-through from the rendered input and are not used here.
+blank/false contact fields. Stage 2's keyword-hit debug columns are dropped by
+Stage 3, so they are not in this stage's input.
 
 ## Pitfalls to know before touching extraction logic
 

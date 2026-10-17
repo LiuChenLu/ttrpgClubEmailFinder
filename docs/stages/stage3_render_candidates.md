@@ -14,11 +14,10 @@ suspiciously short.
 Every input row is written to the output (row count unchanged). Discard rows
 (any `decision` other than exactly `keep`, e.g. `discard_pdf`) pass through
 without Tavily or Playwright calls. All other input columns pass through
-unchanged, including `decision`.
-
-> **Known bug:** the intended behaviour is to omit the two Stage 2 keyword-hit
-> debug columns, but `output_fieldnames()` currently passes them through. See
-> [Known bugs](../known_bugs.md).
+unchanged, including `decision`, except the two Stage 2 keyword-hit debug
+columns (`club_keywords_found_in_snippet`, `ttrpg_keywords_found_in_snippet`),
+which `output_fieldnames()` drops. They are listed in
+`rule_based_filtering.KEYWORD_FIELDNAMES`.
 
 ## Why this stage exists
 

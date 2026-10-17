@@ -78,7 +78,7 @@ Rule-based only; there is no LLM step. Every input row is written. Rules and
 | `club_keywords_found_in_snippet`  | string | 2        | Club keywords found in title + snippet, `; `-separated. Audit only                                                                                         |
 | `ttrpg_keywords_found_in_snippet` | string | 2        | TTRPG keywords found in title + snippet. Audit only                                                                                                        |
 
-`result_score` is not carried forward (known bug 2 in
+`result_score` is not carried forward (known bug 1 in
 [known_bugs.md](known_bugs.md)).
 
 ## Stage 3 — `render_candidates.py` → `rendered_results.csv`
@@ -88,13 +88,15 @@ Rows with `decision == "keep"` get blank or short content repaired with Tavily
 columns blank. Row count is unchanged. Details:
 [stage3_render_candidates.md](stages/stage3_render_candidates.md).
 
-Columns are all Stage 2 columns in the same order, with `extract_status`
-inserted right after `raw_content_status`, and `render_status` and
-`content_source` appended at the end.
+Columns are all Stage 2 columns in the same order, except the two keyword debug
+columns (`club_keywords_found_in_snippet`, `ttrpg_keywords_found_in_snippet`),
+which are dropped. `extract_status` is inserted right after
+`raw_content_status`, and `render_status` and `content_source` are appended at
+the end.
 
 | Column               | Type   | Added by | Notes                                                                                                                            |
 | -------------------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| All Stage 2 columns  | —      | 0–2      | Including `decision` and, because of known bug 1, the two keyword debug columns                                                  |
+| All Stage 2 columns  | —      | 0–2      | Including `decision`, but not the two keyword debug columns                                                                      |
 | `extract_status`     | string | 3        | `succeeded`, `succeeded_empty`, `failed_per_url`, `failed_exception` or `no_response_entry`; blank if `extract` wasn't attempted |
 | `raw_content_length` | int    | 1, 3     | Recomputed from the final content                                                                                                |
 | `result_raw_content` | string | 1, 3     | Final page text: markdown from search or extract, plain text from Playwright                                                     |

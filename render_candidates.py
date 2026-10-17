@@ -31,6 +31,7 @@ from config import (
     RAW_CONTENT_FORMAT, DEFAULT_FILTERED_CSV, RENDERED_RESULTS_CSV,
     SHORT_CONTENT_CHARS,
 )
+from rule_based_filtering import KEYWORD_FIELDNAMES
 from search_row_format_util import is_sentinel, sanitize_for_csv
 from tavily_client_util import tavily
 from collections.abc import Sequence
@@ -361,6 +362,8 @@ def output_fieldnames(input_fieldnames: Sequence[str]) -> list[str]:
     render_status and content_source last."""
     names = []
     for name in input_fieldnames:
+        if name in KEYWORD_FIELDNAMES:
+            continue
         names.append(name)
         if name == "raw_content_status":
             names.append("extract_status")
