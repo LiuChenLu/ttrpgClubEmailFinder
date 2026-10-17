@@ -78,8 +78,8 @@ Rule-based only; there is no LLM step. Every input row is written. Rules and
 | `club_keywords_found_in_snippet`  | string | 2        | Club keywords found in title + snippet, `; `-separated. Audit only                                                                                         |
 | `ttrpg_keywords_found_in_snippet` | string | 2        | TTRPG keywords found in title + snippet. Audit only                                                                                                        |
 
-`result_score` is not carried forward (known bug 1 in
-[known_bugs.md](known_bugs.md)).
+Stage 2 drops `result_score` on purpose, so it is absent from this CSV and every
+later one.
 
 ## Stage 3 — `render_candidates.py` → `rendered_results.csv`
 

@@ -51,12 +51,11 @@ and LLM contact extraction designs are specs.
 
 ```bash
 source .venv/bin/activate
-python -m pytest -q --ignore=tests/test_search_providers.py
+python -m pytest -q
 ```
 
-Known state: 1 test in `tests/test_render_candidates.py` fails, and
-`tests/test_search_providers.py` is stale. Both are in
-[docs/known_bugs.md](docs/known_bugs.md). Don't add new failures.
+Known state: all tests pass. Known mismatches between code and intent, if any,
+are in [docs/known_bugs.md](docs/known_bugs.md). Don't add new failures.
 
 Never run Stage 1 or Stage 3 against the full institution list without the
 user's approval: they spend Tavily credits. `.env` holds the API key; never

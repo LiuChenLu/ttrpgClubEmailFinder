@@ -59,8 +59,9 @@ Stage 3 renders only `keep` rows. Column list:
 Downstream stages test `decision == "keep"` exactly, so any `discard_*` value is
 treated as a discard.
 
-Stage 2 does not carry `result_score` forward, because it isn't in
-`SEARCH_FIELDNAMES`; see [Known bugs](../known_bugs.md).
+Stage 2 drops Stage 1's `result_score` on purpose: the search engine's relevance
+score wasn't a reliable signal, so it isn't in `SEARCH_FIELDNAMES` and no later
+stage sees it.
 
 ## Design choices
 

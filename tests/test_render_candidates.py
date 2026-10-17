@@ -20,7 +20,6 @@ def filtered_row(decision="discard"):
         "search_query": "tabletop club",
         "result_title": "Tabletop Club",
         "result_url": "https://clubs.example.org/tabletop",
-        "result_score": "0.9",
         "result_snippet": "Join the club",
         "raw_content_status": "empty",
         "raw_content_length": "0",
