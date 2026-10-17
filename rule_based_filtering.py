@@ -129,8 +129,9 @@ def keyword_columns(row: dict, ttrpg_kw: list[str], club_kw: list[str]) -> dict:
 
 # Directory pages (an A-Z list of a school's clubs) are deliberately kept: they
 # go through the snippet gate like any other result, so a club keyword alone
-# passes one, whether or not it lists a TTRPG club. Stage 4 splits out the
-# individual clubs, so Stage 2 doesn't need to detect them.
+# passes one, whether or not it lists a TTRPG club. Splitting a directory into
+# individual clubs is not implemented in any stage yet, so Stage 2 doesn't
+# need to detect them.
 
 
 def discard_reason(row: dict, keywords: dict) -> str | None:

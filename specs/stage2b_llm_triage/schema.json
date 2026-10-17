@@ -1,0 +1,59 @@
+{
+  "type": "object",
+  "properties": {
+    "title_evidence_for_page_type": {
+      "type": "string"
+    },
+    "url_evidence_for_page_type": {
+      "type": "string"
+    },
+    "page_type": {
+      "type": "string",
+      "enum": [
+        "tabletop_club",
+        "conglomerate",
+        "other",
+        "unknown"
+      ]
+    },
+    "page_type_certainty": {
+      "type": "string",
+      "enum": [
+        "clear",
+        "probable"
+      ]
+    },
+    "title_evidence_for_institution": {
+      "type": "string"
+    },
+    "url_evidence_for_institution": {
+      "type": "string"
+    },
+    "institution": {
+      "type": "string",
+      "enum": [
+        "supported",
+        "not_supported",
+        "unknown"
+      ]
+    },
+    "institution_certainty": {
+      "type": "string",
+      "enum": [
+        "clear",
+        "probable"
+      ]
+    }
+  },
+  "required": [
+    "title_evidence_for_page_type",
+    "url_evidence_for_page_type",
+    "page_type",
+    "page_type_certainty",
+    "title_evidence_for_institution",
+    "url_evidence_for_institution",
+    "institution",
+    "institution_certainty"
+  ],
+  "additionalProperties": false
+}
