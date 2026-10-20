@@ -1,0 +1,24 @@
+[project]
+name = "ttrpg-club-email-finder"
+version = "0.1.0"
+description = "Finds contact info for TTRPG clubs at US colleges."
+requires-python = ">=3.11"
+dependencies = [
+    "pandas",
+    "python-dotenv",
+    "tavily-python",
+    "playwright",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+scratch = ["google-genai"]
+
+[tool.setuptools]
+# The stage scripts are top-level modules, run as `python script.py`.
+py-modules = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["ignore::DeprecationWarning:google.*"]

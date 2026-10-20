@@ -5,9 +5,13 @@ any consumer can import the real thresholds without an API key or the data
 files present.
 """
 
-# a very small collection of iped institutions that have ttrpg clubs
+# Output of stage 0
+INSTITUTIONS_CSV = "./data/institutions.csv"
+
+# A very small collection of IPEDS institutions that have TTRPG clubs. Stage 1
+# reads this by default so a plain run is cheap. Use `--input` to point it at
+# INSTITUTIONS_CSV for a full run.
 HAS_TTRPG_CLUB_PATH = "./data/iped_institution_has_ttrpg_club.csv"
-RANDOM_COLLEGE_SAMEPLE = "./data/institutions_sample.csv"
 DEFAULT_INPUT_CSV = HAS_TTRPG_CLUB_PATH
 
 # Output of stage 1
@@ -20,10 +24,27 @@ RENDERED_RESULTS_CSV = "./data/rendered_results.csv"
 DEFAULT_CONTACTS_CSV = "./data/ttrpg_clubs_contacts.csv"
 
 # --- institutions (stage 0) -------------------------------------------------
- 
-# One term per line, matched case-insensitively as substrings against the
-# institution name. Drops school types that won't have a TTRPG club (beauty,
-# cosmetology, etc.).
+
+IPEDS_DB_PATH = "./data/ipeds/IPEDS_2024-25_Provisional/IPEDS202425.accdb"
+IPEDS_HD_TABLE = "HD2024"
+IPEDS_ENROLLMENT_TABLE = "DRVEF2024"
+IPEDS_SIZE_COLUMN = "FTE"
+
+# Minimum FTE by IPEDS ICLEVEL. Level 3's minimum is set high enough to drop
+# every level 3 (under 2 year) institution.
+SIZE_MINIMUMS = {1: 300, 2: 750, 3: 10000}
+
+# An institution whose name or alias matches EXCLUDED_INSTITUTION_NAMES_PATH is
+# dropped only if its FTE is below this.
+KEYWORD_SIZE_MAXIMUM = 1500
+
+# Stage 0 computes each campus's distance from Hartford, CT.
+HARTFORD_LATITUDE = 41.763710
+HARTFORD_LONGITUDE = -72.685097
+
+# One term per line, matched as whole words, case-insensitively, against the
+# institution name and its aliases. Drops school types that won't have a TTRPG
+# club (beauty, cosmetology, etc.).
 EXCLUDED_INSTITUTION_NAMES_PATH = "./config/excluded_institution_names.txt"
 
 # --- search ------------------------------------------------------------
@@ -39,15 +60,16 @@ MAX_RESULTS_PER_QUERY = 10
 # advanced is the most relevant at 2 credits.
 SEARCH_DEPTH = "advanced"
 
+# Stage 1 refuses to start a run estimated above this many Tavily credits unless
+# the user passes --yes. The estimate is searches x credits per search.
+MAX_UNCONFIRMED_SEARCH_CREDITS = 100
+
 # Tavily only honors this when the search topic is "general" (its default).
 SEARCH_COUNTRY = "united states"
 
 # Page-text format for both the search hit's raw_content and Stage 3's
 # fallback extract().
 RAW_CONTENT_FORMAT = "markdown"
-
-# Input columns that are not copied onto search_results.csv rows.
-DROPPED_INPUT_COLUMNS = ["distance"]
 
 SLEEP_BETWEEN_COLLEGES_S = 0.2
 

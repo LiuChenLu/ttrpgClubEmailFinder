@@ -21,10 +21,9 @@ content after [Stage 2](stage2_filter_candidates.md) filters candidates.
    university's own domain. This is why fetching must not be restricted to
    `.edu`. The only `.edu` condition is Stage 3's short-content trigger.
    Detecting these pages by header markers is not currently implemented.
-3. **Multi-campus systems** (SUNY, UC, Penn State) — search queries search for
-   campuses (e.g. Tricoci University of Beauty Culture-Elgin) rather than
-   specific institutions. This allows for us to look for clubs that may only
-   exist on a specific campus.
+3. **Multi-campus systems** (SUNY, UC, Penn State) — queries use each campus's
+   own name (e.g. "SUNY Oneonta") rather than the system name, so we find clubs
+   that exist on only one campus.
 4. **Must check full results.** Even if we see an email, Discord, or other
    contact signal in the snippet, we still need to check the full result. For
    example, conglam pages can surface an email address in the snippet, but the
@@ -48,8 +47,8 @@ Here are two types of errors:
 Here are example rows that they would write:
 
 ```csv
-100001,Smalltown Bible College,Smalltown,www.smalltownbible.edu,NO_RESULTS: Smalltown Bible College tabletop RPG club; Smalltown Bible College D&D club,,,,,,,
-129020,University of Connecticut,Storrs,www.uconn.edu,UConn Dungeons and Dragons club,429 Too Many Requests: usage limit exceeded,ERROR,,,,,
+100001,Smalltown Bible College,,,Smalltown,www.smalltownbible.edu,NO_RESULTS: Smalltown Bible College tabletop RPG club; Smalltown Bible College D&D club,,,,,,,
+129020,University of Connecticut,,UConn,Storrs,www.uconn.edu,UConn Dungeons and Dragons club,429 Too Many Requests: usage limit exceeded,ERROR,,,,,
 ```
 
 ### Behavior
@@ -61,12 +60,10 @@ Here are example rows that they would write:
   gets `NO_RESULTS`.
 - `extract()` and Playwright failures are never sentinels; Stage 3 records them
   in `extract_status` and `render_status` on kept rows.
-- Detection: `result_url == "ERROR"` marks an error row, and a `search_query`
-  starting with `NO_RESULTS:` marks a no-results row. Real rows always have a
-  non-blank `raw_content_status`. The markers (`ERROR_URL`, `NO_RESULTS_PREFIX`)
-  and the detector `is_sentinel(row)` live in `search_row_format_util.py`, so
-  this stage's writer and Stage 3's reader share one definition. Stage 2 also
-  discards sentinels by their blank or `ERROR` URL.
+- Detection: a blank or `ERROR` `result_url`, or a `search_query` starting with
+  `NO_RESULTS:`. The markers (`ERROR_URL`, `NO_RESULTS_PREFIX`) and the one
+  detector `is_sentinel(row)` live in `search_row_format_util.py`. Stages 1, 2
+  and 3 all use it; don't write another.
 
 ### Known gaps
 
@@ -87,30 +84,24 @@ Here are example rows that they would write:
 - It may be worthwhile to implement retry logic for when Tavily fails to return
   a result — not yet implemented.
 
-## Code specifics
+## Running it and the credit guard
 
-- Shared with Stage 3, not defined here. `tavily_client_util.py` holds the
-  Tavily client `tavily()` (built lazily with `functools.cache`, so importing
-  doesn't require an API key; importing the module also loads `.env`).
-  `search_row_format_util.py` holds `sanitize_for_csv`, the sentinel markers,
-  and `csv.field_size_limit` (raised for full-page-text rows; an import side
-  effect). Don't copy them back into this script.
+```bash
+python fetch_candidates.py --limit 5            # sample, default input
+python fetch_candidates.py --input data/institutions.csv --yes   # full run
+```
 
-## Scale & budget
-
-Stage 0 currently produces 2,815 institutions, and `config/query_templates.txt`
-currently holds 1 template, so a full run is about 2,815 searches (more if
-templates are added). Before a full run:
-
-- Reconsider always using `SEARCH_DEPTH="advanced"` (2 credits) vs. a cheap
-  `"basic"` first pass.
-- This script doesn't checkpoint/resume — add resumable writes so a mid-run
-  failure doesn't require restarting from scratch.
-- `SLEEP_BETWEEN_COLLEGES_S` may need to grow at ~20x current volume; check
-  Tavily's rate limits.
-- `result_raw_content` is currently written in full to this stage's CSV (fine
-  for test runs) — we probably want to shard this CSV by college.
+`--input`, `--output`, `--limit N` (first N colleges) and `--yes` are the options.
+Before opening the output, `main()` estimates credits as colleges x templates x
+credits per search (2 at `advanced`). Above `MAX_UNCONFIRMED_SEARCH_CREDITS` in
+`config.py` it exits without searching or touching the output, unless `--yes` is
+given. A full run is a few thousand searches, so only the user starts one.
 
 ## Open gaps
 
 - No checkpoint/resume for mid-run failures.
+- Consider a cheap `"basic"` first pass instead of always using `"advanced"`.
+- `SLEEP_BETWEEN_COLLEGES_S` may need to grow at full volume; check Tavily's
+  rate limits.
+- `result_raw_content` is written in full, which makes the CSV huge on a full
+  run. Sharding it by college is an option.

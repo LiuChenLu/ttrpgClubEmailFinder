@@ -1,0 +1,15 @@
+# Terminal
+
+Pagers, prompts, and truncated output look like failures.
+
+- Never run commands that page or prompt (`git --no-pager`, `--yes`-style
+  flags).
+- Tests/builds/installs:
+  `cmd > /tmp/out.log 2>&1; echo "exit=$?"; tail -n 40 /tmp/out.log`. If the
+  cause isn't shown, grep the log. Don't re-run.
+- No output ≠ failure. Check the exit code or the effect.
+
+# Code
+
+Grep for task symbols before reading files (`grep -rl "x" src/`). Read short
+files directly.

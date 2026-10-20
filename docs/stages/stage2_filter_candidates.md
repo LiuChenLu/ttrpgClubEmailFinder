@@ -20,14 +20,15 @@ reason.
 
 A row is discarded for the first of these that matches, checked in this order:
 
-1. **Sentinel row** (`result_url` is blank or `ERROR`), reason `sentinel`.
+1. **Sentinel row** (`search_row_format_util.is_sentinel`), reason `sentinel_row`.
 2. **URL rule**, matched against the lowercased full URL:
    - `pdf`: the URL path ends in `.pdf`.
    - `news`: URL contains `blog`, `news`, `article`, `dailydigest`, `stories`,
      `story` or `forum`.
    - `event`: URL contains `rsvp`, `event` or `calendar`.
    - `storefront`: URL contains `store`, `shop` or `market`.
-3. **Keyword gate**, reason `no_keywords`: `result_title` + `result_snippet`
+3. **Keyword gate**, reason `snippets_has_no_club_or_ttrpg_keywords`:
+   `result_title` + `result_snippet`
    contains no club keyword and no TTRPG keyword. Keywords come from
    `config/club_keywords.txt` and `config/ttrpg_keywords.txt`, matched as
    case-insensitive substrings (not regexes). The page text
@@ -45,19 +46,14 @@ Every input row is written, kept or discarded, so the file is an audit trail.
 Stage 3 renders only `keep` rows. Column list:
 [`data_flow.md`](../data_flow.md).
 
-`decision` is `keep` or `discard_<label>`:
+`decision` is `keep` or `discard_` plus a reason. The reasons are
+`schema.DISCARD_REASONS`: `pdf`, `news`, `event`, `storefronts`,
+`snippets_has_no_club_or_ttrpg_keywords` and `sentinel_row`. The reason names
+are used for the decision, the printed counts and the code, so add a new one in
+`schema.py` only.
 
-| Reason                        | `decision` value                                 |
-| ----------------------------- | ------------------------------------------------ |
-| PDF                           | `discard_pdf`                                    |
-| News/blog-like URL            | `discard_news`                                   |
-| Event-like URL                | `discard_event`                                  |
-| Storefront-like URL           | `discard_storefronts`                            |
-| No keyword in title + snippet | `discard_snippets_has_no_club_or_ttrpg_keywords` |
-| Sentinel row                  | `discard_sentinel_row`                           |
-
-Downstream stages test `decision == "keep"` exactly, so any `discard_*` value is
-treated as a discard.
+Downstream stages test `schema.is_keep(row)` (exactly `keep`), so any other
+value is treated as a discard.
 
 Stage 2 drops Stage 1's `result_score` on purpose: the search engine's relevance
 score wasn't a reliable signal, so it isn't in `SEARCH_FIELDNAMES` and no later
@@ -88,8 +84,9 @@ stage sees it.
 
 - `rule_based_filtering.py` reads no files and needs no network or API key at
   import time.
-- It keeps its own local `is_sentinel` (blank or `ERROR` URL); it does not
-  import the one in `search_row_format_util.py`.
+- The entry point is `rule_based_filtering.apply_rules(row, keyword_lists)`,
+  which returns `decision` and the two keyword columns. `discard_reason` and
+  `url_filtering_reason` return the reason name only.
 - Tests: `tests/test_rule_based_filtering.py`,
   `tests/test_filter_candidates.py`.
 

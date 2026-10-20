@@ -41,8 +41,13 @@ def sanitize_for_csv(text: str) -> str:
 
 
 def is_sentinel(row: dict) -> bool:
-    """True for the ERROR / NO_RESULTS rows that log a failure, not a page."""
+    """True for the ERROR / NO_RESULTS rows that log a failure, not a page.
+
+    A blank result_url counts too: Stage 1 never writes a real row without one,
+    so a blank URL can only be a sentinel (or a corrupt row to discard anyway).
+    """
     return (
-        row.get("result_url") == ERROR_URL
+        not row.get("result_url")
+        or row["result_url"] == ERROR_URL
         or (row.get("search_query") or "").startswith(NO_RESULTS_PREFIX)
     )

@@ -10,42 +10,41 @@ result with contact signals. It does not yet identify individual clubs, check
 which school a page belongs to, or use an LLM. Those are planned; see
 [`specs/`](specs/README.md).
 
-## Pipeline
+## Running it
 
-Each stage is a separate script. It reads the previous stage's CSV and writes
-its own, under `data/` (gitignored).
+Each stage is a script that reads the previous stage's CSV and writes its own
+under `data/` (gitignored). The stage table is in
+[`docs/architecture.md`](docs/architecture.md).
 
-| Stage | Script                                | Output                          |
-| ----- | ------------------------------------- | ------------------------------- |
-| 0     | `python build_institution_dataset.py` | `data/institutions.csv`         |
-| 1     | `python fetch_candidates.py`          | `data/search_results.csv`       |
-| 2     | `python filter_candidates.py`         | `data/filtered_candidates.csv`  |
-| 3     | `python render_candidates.py`         | `data/rendered_results.csv`     |
-| 4     | `python extract_contact_info.py`      | `data/ttrpg_clubs_contacts.csv` |
+```bash
+python build_institution_dataset.py
+python fetch_candidates.py --limit 5     # Stage 1, a cheap sample
+python filter_candidates.py
+python render_candidates.py
+python extract_contact_info.py
+```
 
-Paths and tunable constants are in `config.py`. Stage 1 reads
-`data/iped_institution_has_ttrpg_club.csv` (a small positive-control set), so a
-plain run is cheap. Point `DEFAULT_INPUT_CSV` at `data/institutions.csv` for a
-full run, and check Tavily credit use first (see
-[`docs/stages/stage1_fetch_candidates.md`](docs/stages/stage1_fetch_candidates.md)).
+Every stage after Stage 0 takes `--input` and `--output`. Stage 1 reads a small
+positive-control set by default. A full run is
+`python fetch_candidates.py --input data/institutions.csv --yes`; it spends
+Tavily credits, so check
+[`docs/stages/stage1_fetch_candidates.md`](docs/stages/stage1_fetch_candidates.md)
+first.
 
 ## Setup
-
-The code imports `pandas`, `python-dotenv`, `tavily-python`, `playwright` and
-`pytest`.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install pandas python-dotenv tavily-python playwright pytest
+pip install -e ".[dev]"
 playwright install chromium
 ```
 
 - Create a `.env` file in the repository root with `TAVILY_API_KEY=...`
   (gitignored). Stages 1 and 3 need it.
-- Stage 0 needs the IPEDS Access database at
-  `data/ipeds/IPEDS_2024-25_Provisional/IPEDS202425.accdb` and the `mdb-export`
-  command from `mdbtools`.
+- Stage 0 needs the IPEDS Access database at the path in `config.py`
+  (`IPEDS_DB_PATH`) and the `mdb-export` command from `mdbtools`.
+- The scratch scripts in `tmp/` also use `google-genai`: `pip install -e ".[scratch]"`.
 
 ## Tests
 
@@ -53,26 +52,19 @@ playwright install chromium
 python -m pytest -q
 ```
 
-All tests currently pass. Known mismatches between code and intent are tracked
-in [`docs/known_bugs.md`](docs/known_bugs.md).
+They run offline. Known mismatches between code and intent are in
+[`docs/known_bugs.md`](docs/known_bugs.md).
 
-## Repository layout
+## Where to look
 
-| Path               | What it holds                                                       |
-| ------------------ | ------------------------------------------------------------------- |
-| `*.py` (top level) | Stage scripts and shared helpers                                    |
-| `config/`          | Keyword lists, query templates, and other data files the code reads |
-| `tests/`           | pytest tests                                                        |
-| `docs/`            | **What is implemented.** Describes the code at HEAD                 |
-| `specs/`           | **What is planned.** Not implemented; safe to iterate on            |
-| `data/`, `tmp/`    | Local data and scratch scripts (gitignored)                         |
-| `AGENTS.md`        | Instructions for AI coding agents                                   |
-
-## Documentation
-
-- [`docs/architecture.md`](docs/architecture.md): pipeline overview, pitfalls
-  and conventions
-- [`docs/data_flow.md`](docs/data_flow.md): the columns of every stage's CSV
-- [`docs/stages/`](docs/stages/): one doc per stage
-- [`docs/known_bugs.md`](docs/known_bugs.md): where code differs from intent
-- [`specs/README.md`](specs/README.md): planned work and how specs become docs
+| Path               | What it holds                                                  |
+| ------------------ | -------------------------------------------------------------- |
+| `*.py` (top level) | Stage scripts and shared helpers                               |
+| `schema.py`        | Column lists, decision values and discard reasons              |
+| `config.py`        | Constants and paths                                            |
+| `config/`          | Word lists and query templates the code reads                  |
+| `tests/`           | pytest tests                                                   |
+| `docs/`            | **What is implemented.** Describes the code at HEAD            |
+| `specs/`           | **What is planned.** Not implemented; safe to iterate on       |
+| `data/`, `tmp/`    | Local data and scratch scripts (gitignored)                    |
+| `AGENTS.md`        | Instructions for AI coding agents                              |

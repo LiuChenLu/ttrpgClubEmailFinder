@@ -5,7 +5,7 @@ the three new contact columns blank/false. Every input row produces exactly
 one output row.
 
 Usage:
-    python extract_contact_info.py
+    python extract_contact_info.py [--input PATH] [--output PATH]
 """
 
 from __future__ import annotations
@@ -13,7 +13,10 @@ from __future__ import annotations
 import csv
 import re
 
+import search_row_format_util  # noqa: F401  (importing it raises csv's field size limit)
 from config import DEFAULT_CONTACTS_CSV, RENDERED_RESULTS_CSV
+from schema import CONTACT_NEW_FIELDNAMES, is_keep, require_columns
+from stage_cli import build_parser
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}")
 DISCORD_RE = re.compile(r"(?:discord\.gg|discord\.com/invite)/[A-Za-z0-9-]+")
@@ -33,28 +36,25 @@ CONTACT_WORD_RE = re.compile(
 # count of distinct words matched) so has_contact_signal can be weighted or
 # filtered by confidence instead of being all-or-nothing.
 
-NEW_FIELDNAMES = ["has_contact_signal", "email_found", "discord_found"]
+NEW_FIELDNAMES = CONTACT_NEW_FIELDNAMES
 
 NOT_SCANNED = {"has_contact_signal": False, "email_found": "", "discord_found": ""}
 
-# Stage 1 writes whole pages into result_raw_content, well past csv's default
-# 131072-char field cap. sys.maxsize overflows C long on some platforms, so use
-# a value that is large enough for any page and portable.
-csv.field_size_limit(2**31 - 1)
+REQUIRED_INPUT_COLUMNS = ["decision", "result_raw_content", "result_snippet"]
 
 # TODO: try to find a contact name.
 # TODO: distinguish multiple emails (club president vs. club group address).
 
 
 def passes_decision_gate(row: dict) -> bool:
-    return row.get("decision") == "keep"
+    return is_keep(row)
 
 
 def contact_columns(raw_content: str, snippet: str) -> dict:
     """Emails come from the page text and the snippet; Discord only from text.
 
     The snippet is worth scanning because it survives a failed extraction, but
-    it's truncated to SNIPPET_CHARS, so treat it as a supplement.
+    Tavily truncates it, so treat it as a supplement.
     """
     emails = EMAIL_RE.findall(raw_content) + EMAIL_RE.findall(snippet)
     emails = list(dict.fromkeys(emails))
@@ -73,11 +73,7 @@ def main(
 ) -> None:
     with open(input_csv, newline="", encoding="utf-8") as f_in:
         reader = csv.DictReader(f_in)
-        missing = {"decision", "result_raw_content", "result_snippet"} - set(
-            reader.fieldnames or []
-        )
-        if missing:
-            raise ValueError(f"{input_csv} is missing columns: {sorted(missing)}")
+        require_columns(input_csv, reader.fieldnames, REQUIRED_INPUT_COLUMNS)
 
         with open(output_csv, "w", newline="", encoding="utf-8") as f_out:
             writer = csv.DictWriter(
@@ -97,4 +93,9 @@ def main(
 
 
 if __name__ == "__main__":
-    main()
+    args = build_parser(
+        "Stage 4: find emails and Discord invites in rendered page text.",
+        RENDERED_RESULTS_CSV,
+        DEFAULT_CONTACTS_CSV,
+    ).parse_args()
+    main(args.input_csv, args.output_csv)

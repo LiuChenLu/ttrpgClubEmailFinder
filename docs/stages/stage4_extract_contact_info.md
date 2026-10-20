@@ -28,23 +28,11 @@ Stage 3, so they are not in this stage's input.
    omits link hrefs, so a `mailto:` address or Discord invite behind link text
    is invisible on those rows; don't rely on markdown link syntax.
 
-## Output fields
-
-All Stage 3 columns are preserved, followed by:
-
-| Column               | Meaning                                                                         |
-| -------------------- | ------------------------------------------------------------------------------- |
-| `has_contact_signal` | Boolean signal from found emails, Discord URLs, or contact wording in page text |
-| `email_found`        | Deduplicated email addresses from page text and snippet, separated by `; `      |
-| `discord_found`      | Discord invite URLs found in page text, separated by `; `                       |
-
-## Code specifics
-
-- This stage reads full page text from `rendered_results.csv`, so the same
-  `csv.field_size_limit` increase applies when parsing the input CSV.
+Output columns are in [`data_flow.md`](../data_flow.md).
 
 ## Open gaps
 
+- `discord_found` is not deduplicated; see [known_bugs.md](../known_bugs.md).
 - No disambiguation between multiple emails found on one page (e.g. club address
   vs. an individual officer's address); no contact-name extraction.
 - `CONTACT_WORD_RE` is currently one flat boolean; strong and weak confidence

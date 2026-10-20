@@ -28,35 +28,30 @@ from config import (
     TTRPG_KEYWORDS_PATH,
     load_word_list,
 )
+from schema import (
+    DISCARD_REASONS,
+    FILTERED_FIELDNAMES,
+    KEEP,
+    KEYWORD_FIELDNAMES,
+    REASON_EVENT,
+    REASON_NEWS,
+    REASON_NO_KEYWORDS,
+    REASON_PDF,
+    REASON_SENTINEL_ROW,
+    REASON_STOREFRONTS,
+    SEARCH_FIELDNAMES,
+    discard_decision,
+    require_columns,
+)
+from search_row_format_util import is_sentinel
+from stage_cli import build_parser
 
-# The columns apply_rules() adds beside "decision".
-KEYWORD_FIELDNAMES = [
-    "club_keywords_found_in_snippet", "ttrpg_keywords_found_in_snippet",
-]
-
-# Stage 1 fields are retained so Stage 3 can render kept rows from this audit.
-SEARCH_FIELDNAMES = [
-    "unitid", "college_name", "aliases", "generated_aliases", "city",
-    "website", "search_query", "result_title", "result_url",
-    "result_snippet",
-    "raw_content_status", "raw_content_length", "result_raw_content",
-]
-
-FILTERED_FIELDNAMES = [
-    "decision", *SEARCH_FIELDNAMES, *KEYWORD_FIELDNAMES,
-]
-
-DISCARD_REASON_LABELS = {
-    "pdf": "pdf",
-    "news": "news",
-    "event": "event",
-    "storefront": "storefronts",
-    "no_keywords": "snippets_has_no_club_or_ttrpg_keywords",
-    "sentinel": "sentinel_row",
-}
-
-# DictReader parses every field, including the page-text column Stage 2 ignores.
-csv.field_size_limit(2**31 - 1)
+# Ordered (reason, URL substrings) pairs. The first reason with a hit wins.
+URL_TERMS = (
+    (REASON_NEWS, ("blog", "news", "article", "dailydigest", "stories", "story", "forum")),
+    (REASON_EVENT, ("rsvp", "event", "calendar")),
+    (REASON_STOREFRONTS, ("store", "shop", "market")),
+)
 
 
 @dataclass(frozen=True)
@@ -79,32 +74,16 @@ def find_keywords(text: str, keywords: list[str]) -> list[str]:
     return [kw for kw in keywords if kw in lowered]
 
 
-def is_sentinel(row: dict) -> bool:
-    # NO_RESULTS rows have a blank result_url; ERROR rows have "ERROR" there
-    # and hold the exception message in result_title.
-    return row["result_url"] in ("", "ERROR")
-
-
 def url_filtering_reason(url: str) -> str | None:
-    """Return the first matching URL discard category, if any."""
+    """Return the first matching URL discard reason, if any."""
     lowered_url = url.lower()
     if urlsplit(url).path.lower().endswith(".pdf"):
-        return "pdf"
+        return REASON_PDF
 
-    excluded_terms = (
-        ("news", ("blog", "news", "article", "dailydigest", "stories", "story", "forum")),
-        ("event", ("rsvp", "event", "calendar")),
-        ("storefront", ("store", "shop", "market")),
-    )
-    for reason, terms in excluded_terms:
+    for reason, terms in URL_TERMS:
         if any(term in lowered_url for term in terms):
             return reason
     return None
-
-
-def url_filtering_rules(url: str) -> bool:
-    """Return whether a URL matches a low-relevance content or storefront term."""
-    return url_filtering_reason(url) is not None
 
 
 def keyword_columns(row: dict, ttrpg_kw: list[str], club_kw: list[str]) -> dict:
@@ -123,9 +102,9 @@ def keyword_columns(row: dict, ttrpg_kw: list[str], club_kw: list[str]) -> dict:
 # TODO: special-case club hosting vendors, each identifiable from the page
 # source: CampusGroups ("Powered by CampusGroups"), Modern Campus Involve,
 # Anthology Engage, Lounge, Corq. This is a keep-signal, so it has to run
-# before the discard rules in decide(). Stage 3 no longer reads page text, so
-# this would have to match on result_url instead, or move to a stage that has
-# the page.
+# before the discard rules in discard_reason(). Stage 2 doesn't read page text,
+# so this would have to match on result_url instead, or move to a stage that
+# has the page.
 
 # Directory pages (an A-Z list of a school's clubs) are deliberately kept: they
 # go through the snippet gate like any other result, so a club keyword alone
@@ -135,8 +114,9 @@ def keyword_columns(row: dict, ttrpg_kw: list[str], club_kw: list[str]) -> dict:
 
 
 def discard_reason(row: dict, keywords: dict) -> str | None:
+    """The first matching reason from schema.DISCARD_REASONS, else None."""
     if is_sentinel(row):
-        return "sentinel"
+        return REASON_SENTINEL_ROW
     url_reason = url_filtering_reason(row["result_url"])
     if url_reason:
         return url_reason
@@ -144,27 +124,15 @@ def discard_reason(row: dict, keywords: dict) -> str | None:
         keywords["club_keywords_found_in_snippet"]
         or keywords["ttrpg_keywords_found_in_snippet"]
     )
-    return None if snippet_gate else "no_keywords"
-
-
-def decide(row: dict, keywords: dict) -> str:
-    return "discard" if discard_reason(row, keywords) else "keep"
-
-
-def apply_rules_with_reason(
-    row: dict, keyword_lists: KeywordLists
-) -> tuple[dict, str | None]:
-    """Return the Stage 2 output fields and the transient discard category."""
-    keywords = keyword_columns(row, keyword_lists.ttrpg, keyword_lists.club)
-    reason = discard_reason(row, keywords)
-    decision = "discard" if reason else "keep"
-    return {**keywords, "decision": decision}, reason
+    return None if snippet_gate else REASON_NO_KEYWORDS
 
 
 def apply_rules(row: dict, keyword_lists: KeywordLists) -> dict:
     """The Stage 2 columns this component owns: the keyword hits and decision."""
-    result, _ = apply_rules_with_reason(row, keyword_lists)
-    return result
+    keywords = keyword_columns(row, keyword_lists.ttrpg, keyword_lists.club)
+    reason = discard_reason(row, keywords)
+    decision = discard_decision(reason) if reason else KEEP
+    return {**keywords, "decision": decision}
 
 
 def run_rule_based_filter(
@@ -173,14 +141,11 @@ def run_rule_based_filter(
 ) -> None:
     """Read Stage 1 results, apply rules, and write the Stage 2 audit CSV."""
     keyword_lists = load_keyword_lists()
-    discard_counts = Counter()
+    decision_counts = Counter()
 
     with open(input_csv, newline="", encoding="utf-8") as f_in:
         reader = csv.DictReader(f_in)
-
-        missing = set(SEARCH_FIELDNAMES) - set(reader.fieldnames or [])
-        if missing:
-            raise ValueError(f"{input_csv} is missing columns: {sorted(missing)}")
+        require_columns(input_csv, reader.fieldnames, SEARCH_FIELDNAMES)
 
         with open(output_csv, "w", newline="", encoding="utf-8") as f_out:
             writer = csv.DictWriter(
@@ -189,15 +154,19 @@ def run_rule_based_filter(
             writer.writeheader()
 
             for row in reader:
-                result, reason = apply_rules_with_reason(row, keyword_lists)
-                if reason is not None:
-                    result["decision"] = (
-                        f"discard_{DISCARD_REASON_LABELS[reason]}"
-                    )
+                result = apply_rules(row, keyword_lists)
                 writer.writerow({**row, **result})
-                if reason is not None:
-                    discard_counts[reason] += 1
+                decision_counts[result["decision"]] += 1
 
     print("Filtered rows by reason:")
-    for reason, label in DISCARD_REASON_LABELS.items():
-        print(f"  {label}: {discard_counts[reason]}")
+    for reason in DISCARD_REASONS:
+        print(f"  {reason}: {decision_counts[discard_decision(reason)]}")
+
+
+if __name__ == "__main__":
+    args = build_parser(
+        "Stage 2: rule-based filtering of search results.",
+        SEARCH_RESULTS_CSV,
+        DEFAULT_FILTERED_CSV,
+    ).parse_args()
+    run_rule_based_filter(args.input_csv, args.output_csv)

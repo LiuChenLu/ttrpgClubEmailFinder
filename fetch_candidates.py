@@ -3,7 +3,7 @@
 For each college we run every query template through Tavily, asking for each
 hit's page text, and de-duplicate hits by URL. Every search hit gets a row
 whether or not its text was found; columns that don't apply are left blank.
-Input columns (except DROPPED_INPUT_COLUMNS) are carried onto each output row,
+Input columns (except SEARCH_DROPPED_FIELDNAMES) are carried onto each output row,
 so later stages never need to join back to it.
 
 Page text comes from the search call only. Hits whose text came back blank or
@@ -24,13 +24,16 @@ preview for the first few colleges.
 
 from __future__ import annotations
 from config import (
-    DEFAULT_INPUT_CSV, DROPPED_INPUT_COLUMNS, EXCLUDED_DOMAINS_PATH,
-    MAX_RESULTS_PER_QUERY, QUERY_TEMPLATES_PATH, RAW_CONTENT_FORMAT,
+    DEFAULT_INPUT_CSV, EXCLUDED_DOMAINS_PATH,
+    MAX_RESULTS_PER_QUERY, MAX_UNCONFIRMED_SEARCH_CREDITS,
+    QUERY_TEMPLATES_PATH, RAW_CONTENT_FORMAT,
     RAW_CONTENT_PREVIEW_COUNT, SEARCH_COUNTRY, SEARCH_DEPTH,
     SEARCH_RESULTS_CSV, SLEEP_BETWEEN_COLLEGES_S,
     load_query_templates, load_word_list,
 )
+from schema import SEARCH_NEW_FIELDNAMES, SEARCH_DROPPED_FIELDNAMES, require_columns
 from search_row_format_util import ERROR_URL, NO_RESULTS_PREFIX, sanitize_for_csv
+from stage_cli import build_parser
 from tavily_client_util import tavily
 
 import csv
@@ -55,12 +58,8 @@ class RawStatus:
     MISSING = "missing"  # null or absent
 
 
-# Columns this stage adds. The input CSV's own columns are prepended in main().
-NEW_FIELDNAMES = [
-    "search_query", "result_title", "result_url", "result_score",
-    "result_snippet", "raw_content_status", "raw_content_length",
-    "result_raw_content",
-]
+# Credits one search() call costs at each search_depth (Tavily's pricing).
+CREDITS_PER_SEARCH = {"advanced": 2}
 
 
 @dataclass
@@ -202,19 +201,43 @@ def log_raw_content(name: str, results: list[SearchResult]) -> None:
             )
 
 
-def main(input_csv: str = DEFAULT_INPUT_CSV, output_csv: str = SEARCH_RESULTS_CSV) -> None:
+def estimate_search_credits(n_colleges: int, n_templates: int) -> int:
+    return n_colleges * n_templates * CREDITS_PER_SEARCH.get(SEARCH_DEPTH, 1)
+
+
+def main(
+    input_csv: str = DEFAULT_INPUT_CSV,
+    output_csv: str = SEARCH_RESULTS_CSV,
+    limit: int | None = None,
+    assume_yes: bool = False,
+) -> None:
     query_templates = load_query_templates(QUERY_TEMPLATES_PATH)
     excluded_domains = load_word_list(EXCLUDED_DOMAINS_PATH)
 
-    with open(input_csv, newline="", encoding="utf-8") as f_in, \
-            open(output_csv, "w", newline="", encoding="utf-8") as f_out:
-
+    with open(input_csv, newline="", encoding="utf-8") as f_in:
         reader = csv.DictReader(f_in)
-        carried = [c for c in reader.fieldnames or [] if c not in DROPPED_INPUT_COLUMNS]
-        writer = csv.DictWriter(f_out, fieldnames=carried + NEW_FIELDNAMES)
+        require_columns(input_csv, reader.fieldnames, ["college_name"])
+        carried = [c for c in reader.fieldnames or [] if c not in SEARCH_DROPPED_FIELDNAMES]
+        rows = list(reader)
+    if limit is not None:
+        rows = rows[:limit]
+
+    # Checked before the output is opened, so a refusal doesn't truncate an
+    # earlier run's file or spend any credits.
+    credits = estimate_search_credits(len(rows), len(query_templates))
+    if credits > MAX_UNCONFIRMED_SEARCH_CREDITS and not assume_yes:
+        raise SystemExit(
+            f"Estimated {credits} Tavily credits ({len(rows)} colleges x "
+            f"{len(query_templates)} queries, search_depth={SEARCH_DEPTH}) "
+            f"exceeds {MAX_UNCONFIRMED_SEARCH_CREDITS}. Pass --yes to run, or "
+            "--limit N to run a sample."
+        )
+
+    with open(output_csv, "w", newline="", encoding="utf-8") as f_out:
+        writer = csv.DictWriter(f_out, fieldnames=carried + SEARCH_NEW_FIELDNAMES)
         writer.writeheader()
 
-        for index, row in enumerate(reader):
+        for index, row in enumerate(rows):
             name = row["college_name"]
             institution = {c: row[c] for c in carried}
             results, errors = search_college(name, query_templates, excluded_domains)
@@ -243,4 +266,18 @@ def main(input_csv: str = DEFAULT_INPUT_CSV, output_csv: str = SEARCH_RESULTS_CS
 
 
 if __name__ == "__main__":
-    main()
+    parser = build_parser(
+        "Stage 1: search Tavily for candidate club pages.",
+        DEFAULT_INPUT_CSV,
+        SEARCH_RESULTS_CSV,
+    )
+    parser.add_argument(
+        "--limit", type=int, default=None,
+        help="search only the first N colleges of the input",
+    )
+    parser.add_argument(
+        "--yes", dest="assume_yes", action="store_true",
+        help="run even if the estimated Tavily cost exceeds the safety cap",
+    )
+    args = parser.parse_args()
+    main(args.input_csv, args.output_csv, args.limit, args.assume_yes)

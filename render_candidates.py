@@ -31,8 +31,9 @@ from config import (
     RAW_CONTENT_FORMAT, DEFAULT_FILTERED_CSV, RENDERED_RESULTS_CSV,
     SHORT_CONTENT_CHARS,
 )
-from rule_based_filtering import KEYWORD_FIELDNAMES
+from schema import RENDERED_NEW_FIELDNAMES, is_keep, rendered_fieldnames, require_columns
 from search_row_format_util import is_sentinel, sanitize_for_csv
+from stage_cli import build_parser
 from tavily_client_util import tavily
 from collections.abc import Sequence
 
@@ -49,17 +50,15 @@ logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 logger = logging.getLogger("render_candidates")
 logger.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
 
-# Columns Stage 2's output must have. Keyword evidence is required by the
-# handoff contract but deliberately omitted from this stage's output.
+# Columns Stage 2's output must have.
 REQUIRED_INPUT_COLUMNS = [
     "decision",
     "result_url", "search_query", "raw_content_status",
     "raw_content_length", "result_raw_content",
 ]
-# Columns this stage adds. If the input already has any of them it is not a
-# current Stage 2 output, and writing it
-# back out would duplicate the column.
-NEW_FIELDNAMES = ["extract_status", "render_status", "content_source"]
+# If the input already has any of the columns this stage adds, it is not a
+# current Stage 2 output, and writing it back out would duplicate the column.
+NEW_FIELDNAMES = RENDERED_NEW_FIELDNAMES
 
 INSTALL_HINT = "Run `pip install playwright` and `playwright install chromium`."
 
@@ -259,7 +258,7 @@ class PlaywrightRenderer:
         up rather than mark every remaining row failed.
         """
         if self._browser is None:
-            raise RenderAbort("Brpwser is not initialized")
+            raise RenderAbort("Browser is not initialized")
         if self._browser.is_connected():
             self._consecutive_deaths = 0
             return
@@ -303,10 +302,7 @@ def render_row(row: dict, renderer, extract=extract_with_retries) -> dict:
     sentinels. Only RenderAbort escapes, and the caller must let it.
     """
     out = dict(row)
-    if row["decision"] != "keep":
-        out.update(extract_status="", render_status="", content_source="")
-        return out
-    if is_sentinel(row):
+    if not is_keep(row) or is_sentinel(row):
         out.update(extract_status="", render_status="", content_source="")
         return out
 
@@ -355,25 +351,12 @@ def render_row(row: dict, renderer, extract=extract_with_retries) -> dict:
 
 
 def output_fieldnames(input_fieldnames: Sequence[str]) -> list[str]:
-    """The input columns except Stage 2 debug fields, plus this stage's fields.
-
-    Columns follow the order of
-    pipeline_data_flow.md: extract_status right after raw_content_status,
-    render_status and content_source last."""
-    names = []
-    for name in input_fieldnames:
-        if name in KEYWORD_FIELDNAMES:
-            continue
-        names.append(name)
-        if name == "raw_content_status":
-            names.append("extract_status")
-    return names + ["render_status", "content_source"]
+    """Stage 3's output columns; the order is defined in schema.py."""
+    return rendered_fieldnames(input_fieldnames)
 
 
 def check_input_columns(fieldnames: Sequence[str], path: str) -> None:
-    missing = [c for c in REQUIRED_INPUT_COLUMNS if c not in fieldnames]
-    if missing:
-        raise ValueError(f"{path} is missing columns: {missing}")
+    require_columns(path, fieldnames, REQUIRED_INPUT_COLUMNS)
     already = [c for c in NEW_FIELDNAMES if c in fieldnames]
     if already:
         raise ValueError(
@@ -393,7 +376,7 @@ def main(
         check_input_columns(fieldnames, input_csv)
         has_keeps = False
         for row in reader:
-            has_keeps = has_keeps or row["decision"] == "keep"
+            has_keeps = has_keeps or is_keep(row)
         f_in.seek(0)
         reader = csv.DictReader(f_in)
 
@@ -416,4 +399,9 @@ def main(
 
 
 if __name__ == "__main__":
-    main()
+    args = build_parser(
+        "Stage 3: repair blank or short page text on kept rows.",
+        DEFAULT_FILTERED_CSV,
+        RENDERED_RESULTS_CSV,
+    ).parse_args()
+    main(args.input_csv, args.output_csv)

@@ -1,123 +1,80 @@
-# CSV field reference (implemented behaviour)
+# CSV columns (implemented behaviour)
 
-Column lists below come from the code at HEAD: `build_institution_dataset.py`,
-`fetch_candidates.py` (`NEW_FIELDNAMES`), `rule_based_filtering.py`
-(`FILTERED_FIELDNAMES`), `render_candidates.py` (`output_fieldnames()`) and
-`extract_contact_info.py` (`NEW_FIELDNAMES`). The files in `data/` are
-gitignored and may have been produced by older code, so don't treat them as the
-schema. Planned columns live under [`specs/`](../specs/README.md), not here.
+The column lists are defined in [`schema.py`](../schema.py), and
+`tests/test_docs.py` fails if this file and `schema.py` disagree. Each column is
+listed once, under the stage that introduces it. A stage's file has every column
+from earlier stages first, in order, unless it says otherwise. Files in `data/`
+are gitignored and may come from older code, so don't treat them as the schema.
+Planned columns belong in [`specs/`](../specs/README.md), not here.
 
-Each stage reads the previous stage's CSV and writes its own. Paths are
-constants in `config.py`.
+Every stage after Stage 1 writes one row per input row. Stage 1 writes one row per
+search result.
 
-| Stage | Output                          | One row per                                                  |
-| ----- | ------------------------------- | ------------------------------------------------------------ |
-| 0     | `data/institutions.csv`         | IPEDS institution that passes the filters                    |
-| 1     | `data/search_results.csv`       | search result per college (deduplicated), plus sentinel rows |
-| 2     | `data/filtered_candidates.csv`  | Stage 1 row (all kept)                                       |
-| 3     | `data/rendered_results.csv`     | Stage 2 row (all kept)                                       |
-| 4     | `data/ttrpg_clubs_contacts.csv` | Stage 3 row (all kept)                                       |
+## Stage 0: `institutions.csv`
 
-## Stage 0 — `build_institution_dataset.py` → `institutions.csv`
+One row per IPEDS institution that passes the filters in
+[stage 0](stages/stage0_build_institution_dataset.md).
 
-Pulls the relevant columns from IPEDS and drops institutions unlikely to have a
-TTRPG club. The filter rules are in
-[stage0_build_institution_dataset.md](stages/stage0_build_institution_dataset.md).
+- `unitid`: IPEDS unit ID
+- `college_name`: IPEDS institution name
+- `aliases`: official IPEDS aliases (`IALIAS`), `|`-separated
+- `generated_aliases`: generated shortened name variants, `|`-separated
+- `city`: IPEDS city
+- `distance`: miles from Hartford. Stage 1 drops it
+- `website`: IPEDS official website (`WEBADDR`)
 
-| Column              | Type   | Notes                                             |
-| ------------------- | ------ | ------------------------------------------------- |
-| `unitid`            | string | IPEDS unit ID                                     |
-| `college_name`      | string | IPEDS institution name                            |
-| `aliases`           | string | Official IPEDS aliases (`IALIAS`), `\|`-separated |
-| `generated_aliases` | string | Generated shortened name variants, `\|`-separated |
-| `city`              | string | IPEDS city                                        |
-| `distance`          | float  | Distance from Hartford. Stage 1 drops it          |
-| `website`           | string | IPEDS official website (`WEBADDR`)                |
+## Stage 1: `search_results.csv`
 
-## Stage 1 — `fetch_candidates.py` → `search_results.csv`
+One row per de-duplicated search result per college, plus sentinel rows that log
+an error (format in [stage 1](stages/stage1_fetch_candidates.md)). Starts with
+the Stage 0 columns except `distance`.
 
-Network calls to the Tavily search API. Each college can have several queries
-and several results. Page content comes from the search call only. Each row is a
-search result, except for sentinel rows that log an error. Sentinel format is in
-[stage1_fetch_candidates.md](stages/stage1_fetch_candidates.md).
+- `search_query`: query of the best-scoring result across queries
+- `result_title`: holds the exception text on error sentinel rows
+- `result_url`: `ERROR` on error sentinels, blank on no-results sentinels
+- `result_score`: search API relevance score
+- `result_snippet`: snippets from every query that returned the hit, joined
+- `raw_content_status`: search-time fetch outcome, `succeeded`, `empty` or `missing`
+- `raw_content_length`: length of `result_raw_content`
+- `result_raw_content`: page text as markdown; blank if the fetch failed
 
-| Column               | Type   | Added by | Notes                                                        |
-| -------------------- | ------ | -------- | ------------------------------------------------------------ |
-| `unitid`             | string | 0        |                                                              |
-| `college_name`       | string | 0        |                                                              |
-| `aliases`            | string | 0        |                                                              |
-| `generated_aliases`  | string | 0        |                                                              |
-| `city`               | string | 0        |                                                              |
-| `website`            | string | 0        |                                                              |
-| `search_query`       | string | 1        | Query of the best-scoring result across queries              |
-| `result_title`       | string | 1        | Holds the exception text on error sentinel rows              |
-| `result_url`         | string | 1        | `ERROR` on error sentinels, blank on no-results sentinels    |
-| `result_score`       | float  | 1        | Search API relevance score                                   |
-| `result_snippet`     | string | 1        | Snippets from every query that returned the hit, joined      |
-| `raw_content_status` | string | 1        | Search-time fetch outcome: `succeeded`, `empty` or `missing` |
-| `raw_content_length` | int    | 1        | Length of `result_raw_content`                               |
-| `result_raw_content` | string | 1        | Page text as markdown; blank if the fetch failed             |
+## Stage 2: `filtered_candidates.csv`
 
-## Stage 2 — `filter_candidates.py` → `filtered_candidates.csv`
+Rule-based only. Every input row is written, so the file is an audit trail.
+Rules and decision values: [stage 2](stages/stage2_filter_candidates.md). The
+columns are `decision`, then the Stage 1 columns **without `result_score`**
+(dropped on purpose, so no later stage sees it), then the two audit columns.
 
-Rule-based only; there is no LLM step. Every input row is written. Rules and
-`decision` values:
-[stage2_filter_candidates.md](stages/stage2_filter_candidates.md).
+- `decision`: `keep`, or `discard_` plus a reason from `schema.DISCARD_REASONS`
+- `club_keywords_found_in_snippet`: club keywords found in title + snippet, `; `-separated
+- `ttrpg_keywords_found_in_snippet`: TTRPG keywords found in title + snippet
 
-| Column                            | Type   | Added by | Notes                                                                                                                                                      |
-| --------------------------------- | ------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `decision`                        | string | 2        | `keep`, or `discard_pdf`, `discard_news`, `discard_event`, `discard_storefronts`, `discard_snippets_has_no_club_or_ttrpg_keywords`, `discard_sentinel_row` |
-| `unitid` … `website`              | string | 0        | Same six columns as Stage 1                                                                                                                                |
-| `search_query`                    | string | 1        |                                                                                                                                                            |
-| `result_title`                    | string | 1        |                                                                                                                                                            |
-| `result_url`                      | string | 1        |                                                                                                                                                            |
-| `result_snippet`                  | string | 1        |                                                                                                                                                            |
-| `raw_content_status`              | string | 1        |                                                                                                                                                            |
-| `raw_content_length`              | int    | 1        |                                                                                                                                                            |
-| `result_raw_content`              | string | 1        | Preserved for Stage 3                                                                                                                                      |
-| `club_keywords_found_in_snippet`  | string | 2        | Club keywords found in title + snippet, `; `-separated. Audit only                                                                                         |
-| `ttrpg_keywords_found_in_snippet` | string | 2        | TTRPG keywords found in title + snippet. Audit only                                                                                                        |
+## Stage 3: `rendered_results.csv`
 
-Stage 2 drops `result_score` on purpose, so it is absent from this CSV and every
-later one.
+Rows with `decision == "keep"` get blank or short page text repaired. All other
+rows pass through with the three new columns blank. Details:
+[stage 3](stages/stage3_render_candidates.md). Columns are the Stage 2 columns
+**without the two keyword audit columns**, with `extract_status` inserted right
+after `raw_content_status`, and `render_status` and `content_source` appended.
+`raw_content_length` and `result_raw_content` are recomputed from the final text.
 
-## Stage 3 — `render_candidates.py` → `rendered_results.csv`
-
-Rows with `decision == "keep"` get blank or short content repaired with Tavily
-`extract` and then Playwright. All other rows pass through with the three new
-columns blank. Row count is unchanged. Details:
-[stage3_render_candidates.md](stages/stage3_render_candidates.md).
-
-Columns are all Stage 2 columns in the same order, except the two keyword debug
-columns (`club_keywords_found_in_snippet`, `ttrpg_keywords_found_in_snippet`),
-which are dropped. `extract_status` is inserted right after
-`raw_content_status`, and `render_status` and `content_source` are appended at
-the end.
-
-| Column               | Type   | Added by | Notes                                                                                                                            |
-| -------------------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| All Stage 2 columns  | —      | 0–2      | Including `decision`, but not the two keyword debug columns                                                                      |
-| `extract_status`     | string | 3        | `succeeded`, `succeeded_empty`, `failed_per_url`, `failed_exception` or `no_response_entry`; blank if `extract` wasn't attempted |
-| `raw_content_length` | int    | 1, 3     | Recomputed from the final content                                                                                                |
-| `result_raw_content` | string | 1, 3     | Final page text: markdown from search or extract, plain text from Playwright                                                     |
-| `render_status`      | string | 3        | `not_needed`, `succeeded` or `failed_per_url`; blank for discarded rows and sentinels                                            |
-| `content_source`     | string | 3        | `search`, `extract` or `playwright`; blank if content is blank                                                                   |
-
-## Stage 4 — `extract_contact_info.py` → `ttrpg_clubs_contacts.csv`
-
-Offline text processing. Rows with `decision == "keep"` are scanned; all other
-rows get the defaults shown below. Each row is still one search result, not one
-club: multiple results may describe the same club, and directory pages are not
-split. School attribution is not checked. Details:
-[stage4_extract_contact_info.md](stages/stage4_extract_contact_info.md).
+- `extract_status`: `succeeded`, `succeeded_empty`, `failed_per_url`,
+  `failed_exception` or `no_response_entry`; blank if `extract` wasn't attempted
+- `render_status`: `not_needed`, `succeeded` or `failed_per_url`; blank for
+  discarded rows and sentinels
+- `content_source`: `search`, `extract` or `playwright`; blank if the text is blank
 
 `result_raw_content` is markdown or plain text depending on `content_source`.
-Playwright text has no link hrefs (`mailto:`, Discord invites), so extraction
-can't rely on markdown links.
+Playwright text has no link hrefs (`mailto:`, Discord invites).
 
-| Column               | Type   | Added by | Notes                                                                                 |
-| -------------------- | ------ | -------- | ------------------------------------------------------------------------------------- |
-| All Stage 3 columns  | —      | 0–3      | Preserved                                                                             |
-| `has_contact_signal` | bool   | 4        | True if an email, Discord invite or contact word was found; `False` on unscanned rows |
-| `email_found`        | string | 4        | Deduplicated emails from page text and snippet, `; `-separated; blank if none         |
-| `discord_found`      | string | 4        | Discord invites from page text, `; `-separated; blank if none                         |
+## Stage 4: `ttrpg_clubs_contacts.csv`
+
+Offline text processing. Rows with `decision == "keep"` are scanned; all others
+get the defaults below. Each row is still one search result, not one club.
+Details: [stage 4](stages/stage4_extract_contact_info.md). Columns are all Stage 3
+columns, then:
+
+- `has_contact_signal`: bool; true if an email, Discord invite or contact word
+  was found; `False` on unscanned rows
+- `email_found`: deduplicated emails from page text and snippet, `; `-separated
+- `discord_found`: Discord invites from page text, `; `-separated

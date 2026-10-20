@@ -11,17 +11,23 @@ import re
 from math import radians, sin, cos, asin, sqrt
 from urllib.parse import urlparse
 
-from config import EXCLUDED_INSTITUTION_NAMES_PATH, load_word_list
+from config import (
+    EXCLUDED_INSTITUTION_NAMES_PATH,
+    HARTFORD_LATITUDE,
+    HARTFORD_LONGITUDE,
+    INSTITUTIONS_CSV,
+    IPEDS_DB_PATH,
+    IPEDS_ENROLLMENT_TABLE as ENROLLMENT_TABLE,
+    IPEDS_HD_TABLE as HD_TABLE,
+    IPEDS_SIZE_COLUMN as SIZE_COLUMN,
+    KEYWORD_SIZE_MAXIMUM,
+    SIZE_MINIMUMS,
+    load_word_list,
+)
+from schema import INSTITUTION_FIELDNAMES
 
-INPUT_DATA_PATH = Path("./data/ipeds/IPEDS_2024-25_Provisional/IPEDS202425.accdb")
-OUTPUT_DATA_PATH = Path("./data/institutions.csv")
-HD_TABLE = "HD2024"
-ENROLLMENT_TABLE = "DRVEF2024"
-SIZE_COLUMN = "FTE"
-SIZE_MINIMUMS = {1: 300, 2: 750, 3: 10000}
-KEYWORD_SIZE_MAXIMUM = 1500
-HARTFORD_LATITUDE = 41.763710
-HARTFORD_LONGITUDE = -72.685097
+INPUT_DATA_PATH = Path(IPEDS_DB_PATH)
+OUTPUT_DATA_PATH = Path(INSTITUTIONS_CSV)
 
 
 def distance(lat1, lon1, lat2, lon2):
@@ -228,12 +234,7 @@ def process_ipeds(df):
         "GENERATED_ALIASES": "generated_aliases",
         "CITY": "city", "DISTANCE": "distance", "WEBADDR": "website",
     })
-    result = result[
-        [
-            "unitid", "college_name", "aliases", "generated_aliases", "city",
-            "distance", "website",
-        ]
-    ]
+    result = result[INSTITUTION_FIELDNAMES]
     result = result.sort_values(
         ["distance", "unitid"], na_position="last", kind="mergesort"
     )
