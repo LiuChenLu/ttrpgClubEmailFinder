@@ -53,11 +53,25 @@ Apply in order. The first match wins.
 
 ### institution
 
-- `supported`: key part of the target's name or an alias appears in the URL or
-  title as a whole word, so `mit` inside `summit` does not count
-- `not_supported`: the URL or title names a different institution or clearly
-  unaffiliated with any institution
-- `unknown`: not possible to tell
+Compare whole institution names. A word the result shares with the target's name
+(a state, a city, "State", "Community") is not sufficient support when the
+result names a different institution. For example, Central Connecticut State
+University is not the University of Connecticut despite sharing the word
+"Connecticut".
+
+Apply in order. The first match wins.
+
+1. `unknown`: the URL or title names both the target and a different institution
+   (e.g. a joint event or a page comparing two schools).
+2. `not_supported`: the URL or title names a different institution, or is
+   clearly not tied to any institution (a store, a library, a personal blog).
+3. `supported`: the URL or title names the target: its name, an alias, a common
+   nickname (UConn), a distinctive part of its name as a whole word (`mit`
+   inside `summit` does not count), or its domain.
+4. `unknown`: not possible to tell.
+
+A campus of the target, or the system the target belongs to, is the target, not
+a different institution (see the case table below).
 
 ### certainty
 
@@ -94,6 +108,8 @@ Apply in order. The first match wins.
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------ |
 | TTRPG club for a campus of the same institution (e.g. ttrpg club for the Manchester campus of CT State when we're searching for Gateway campus)               | `supported`     | clubs are deduplicated later, this is harmless to keep |
 | TTRPG club for the overall institution when searching a campus of the institution (e.g. club listing for CT State when we're searching for Manchester campus) | `supported`     | clubs are deduplicated later, this is harmless to keep |
+| Different school sharing a word with the target (searching South Seattle College, result is North Seattle College)                                            | `not_supported` | shared words don't count                               |
+| Result names both the target and a different school                                                                                                           | `unknown`       | real doubt; kept                                       |
 | Community group with no student affiliation (game store, library)                                                                                             | `not_supported` |                                                        |
 | An article                                                                                                                                                    | `not_supported` |                                                        |
 
