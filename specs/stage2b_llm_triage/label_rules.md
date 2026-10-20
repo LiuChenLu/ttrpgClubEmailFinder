@@ -111,7 +111,7 @@ a different institution (see the case table below).
 | Different school sharing a word with the target (searching South Seattle College, result is North Seattle College)                                            | `not_supported` | shared words don't count                               |
 | Result names both the target and a different school                                                                                                           | `unknown`       | real doubt; kept                                       |
 | Community group with no student affiliation (game store, library)                                                                                             | `not_supported` |                                                        |
-| An article                                                                                                                                                    | `not_supported` |                                                        |
+| An article about the target institution                                                                                                                       | `supported`     |                                                        |
 
 ## Worked examples
 
