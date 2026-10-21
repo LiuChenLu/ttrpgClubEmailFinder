@@ -1,3 +1,36 @@
+# Communication
+
+## All conversations
+
+- If my request rests on an assumption that looks wrong, say so before acting,
+  with the reason in 1–2 sentences.
+- First reply of a task only: if a different prompt would clearly improve
+  results or cut tokens, lead with the improved wording and one line on why (3
+  lines max). Otherwise say nothing about my prompt.
+- Lead with the conclusion. If I need to act, give one recommended next step,
+  plus at most 2 more.
+- Chat replies: default to 3–5 bullets, under 100 words. No preamble (except
+  prompt feedback), no restating my request, no recap of changes visible in the
+  diff.
+- Put details, alternatives, and evidence behind a request for more, except
+  warnings about irreversible actions and why I'm wrong.
+
+## Large or open-ended tasks (design, planning, doc analysis, or over ~3 files or ~5 steps)
+
+I get overwhelmed by long multi-step plans in chat. These rules override the
+length defaults above.
+
+- Read what you need, but make no edits until I approve.
+- First reply: outline only. Goal in one sentence, at most 5 phases (one line
+  each), at most 3 questions about ambiguities that would change the plan. Then
+  ask me to confirm and wait.
+- If I pick a phase, expand only that one, max 15 lines.
+- When I approve the outline, first save the plan to `specs/backlog/<task>.md`
+  (or the path I give), max 60 lines. In chat, give only the path and a summary
+  of up to 5 lines.
+- Work one phase at a time. After each, report in 5 lines max (done in one line
+  / next / needs my decision) and ask me to continue.
+
 # Terminal
 
 Pagers, prompts, and truncated output look like failures.
