@@ -14,6 +14,8 @@
   diff.
 - Put details, alternatives, and evidence behind a request for more, except
   warnings about irreversible actions and why I'm wrong.
+- If you propose a change or need to disambiguate something, make sure to
+  mention the file that it is from.
 
 ## Large or open-ended tasks (design, planning, doc analysis, or over ~3 files or ~5 steps)
 
