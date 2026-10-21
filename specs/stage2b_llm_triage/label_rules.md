@@ -105,7 +105,7 @@ choosing a different label.
 `page_type_certainty` is defined as:
 
 - `clear`:
-  - For `tabletop_club`: the page is about a tabletop club Which means it needs
+  - For `tabletop_club`: the page is about a tabletop club which means it needs
     to satisfiy both of the following:
     1. either contains a word associated with clubs (e.g. club, society, guild)
        or it is hosted on a common campus clubs platform (e.g. campusgroups,
@@ -118,7 +118,7 @@ choosing a different label.
     "student organizations", "clubs and activities", "campus groups") or it has
     directory termions (e.g. "browse organizations", "find a club", "all student
     groups") or it is on a common campus clubs platform (e.g. campusgroups,
-    engage, campuslabs, presence, involve))
+    engage, campuslabs, presence, involve).
 - `probable`: the page does not meet the criteria for clear but is possibly of
   that classification
   - for `tabletop_club`: it contains words usually associated with tabletop
