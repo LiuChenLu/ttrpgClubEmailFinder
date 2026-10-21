@@ -1,7 +1,12 @@
 # Spec: LLM triage in Stage 2b (`llm_triage.py`)
 
-**Status:** draft. **Nothing in this file is implemented.** Today
-`filter_candidates.py` only runs the rule-based filter. **Implements in:** new
+**Status:** in-progress. **Landed:** the harness, with the LLM call stubbed in
+`gemini_client_util.py`, and `is_on_domain` (see
+[stage 2](../../docs/stages/stage2_filter_candidates.md#llm-triage-2b)). **Not
+landed:** the real call, `config/triage_prompt.md`,
+`config/triage_examples.jsonl`, retry with backoff, and Stage 3 reading the 2b
+file. Where this file disagrees with the code, the code is what is true today.
+**Implements in:** new
 `llm_triage.py`; `filter_candidates.py` (call it after `rule_based_filtering`);
 `config.py` (`TRIAGE_*` constants); new `config/triage_prompt.md` and
 `config/triage_examples.jsonl`; tests. **Docs to update when it lands:**
@@ -41,7 +46,7 @@ columns are blank.
 
 | Column                    | Type   | Notes                                                                                               |
 | ------------------------- | ------ | --------------------------------------------------------------------------------------------------- |
-| `decision`                | string | `keep`, or `discard_<reason>`. 2b adds a discard reason for rows it drops (name not yet chosen)     |
+| `decision`                | string | `keep`, or `discard_<reason>`.                                                                      |
 | every `schema.json` field | varies | One column per field, same name and values as in [schema.json](schema.json)                         |
 | `triage_status`           | string | Blank on success; an error value when the call failed and the row was kept (see "Failure handling") |
 | model and prompt version  | string | Each row records which model and prompt version labeled it (column names not yet chosen)            |
@@ -117,11 +122,22 @@ the step leans toward keeping:
 
 ## Post processing
 
-Post processing then adds `should_drop(bool)`. It drops a result when
-`page_type` is `other` or when `institution` is `not_supported`. Every other
-result goes to Stage 3 including `unknown`. These are both tunable in code on
-the `*_certainty` and `*_evidence_for_*` fields (see
-[schema.json](schema.json)).
+Post processing computes `should_drop(bool)`. `should_drop` is true when
+`institution` is `not_supported` or `page_type` is `other`, otherwise it is
+`false`.
+
+If `should_drop` is `true`, we output `decision=discard_REASON` in the csv. The
+`REASONS` are either:
+
+- `wrong_institution`: `institution` is `not_supported`
+- `wrong_page_type`: `page_type` is `other`
+- `wrong_institution_and_wrong_page_type`: `institution` is `not_supported` and
+  `page_type` is `other`
+
+If`should_drop` is `false`, and we output `decision=keep` in the csv.
+
+These are both tunable in code on the `*_certainty` and `*_evidence_for_*`
+fields (see [schema.json](schema.json)).
 
 ## Failure handling
 

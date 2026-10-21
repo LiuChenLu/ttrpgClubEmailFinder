@@ -18,6 +18,9 @@ DEFAULT_INPUT_CSV = HAS_TTRPG_CLUB_PATH
 SEARCH_RESULTS_CSV = "./data/search_results.csv"
 # Output of stage 2
 DEFAULT_FILTERED_CSV = "./data/filtered_candidates.csv"
+# Output of stage 2b. Stage 3 still reads DEFAULT_FILTERED_CSV; switch it to
+# this file once the LLM call is no longer stubbed.
+DEFAULT_LLM_FILTERED_CSV = "./data/llm_filtered_candidates.csv"
 # Output of stage 3
 RENDERED_RESULTS_CSV = "./data/rendered_results.csv"
 # Output of stage 4
@@ -76,6 +79,18 @@ SLEEP_BETWEEN_COLLEGES_S = 0.2
 # How many colleges (in input order) get a raw_content preview logged. Enough
 # to catch a JS/consent-wall stub early in a run without hundreds of log lines.
 RAW_CONTENT_PREVIEW_COUNT = 5
+
+# --- LLM triage (stage 2b) ---------------------------------------------------
+
+# Both are "stub" because the LLM call is stubbed, so no row claims a real model
+# labeled it. Placeholders until the eval picks a model.
+TRIAGE_MODEL = "stub"
+TRIAGE_PROMPT_VERSION = "stub"
+# For the real client; the stub ignores it.
+TRIAGE_TEMPERATURE = 0
+# One try plus one retry when the response is invalid. Retrying 429/5xx belongs
+# to the client, not to this count.
+TRIAGE_MAX_ATTEMPTS = 2
 
 # --- render (stage 3) --------------------------------------------------------
 

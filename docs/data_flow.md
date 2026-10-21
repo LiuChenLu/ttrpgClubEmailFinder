@@ -49,6 +49,34 @@ columns are `decision`, then the Stage 1 columns **without `result_score`**
 - `club_keywords_found_in_snippet`: club keywords found in title + snippet, `; `-separated
 - `ttrpg_keywords_found_in_snippet`: TTRPG keywords found in title + snippet
 
+## Stage 2b: `llm_filtered_candidates.csv`
+
+LLM triage, run by `filter_candidates.py` after Stage 2a. **The LLM call is a
+stub today**, so every label is `stub` (see [stage 2](stages/stage2_filter_candidates.md)).
+Every Stage 2a row is written. The columns are all Stage 2a columns, then the
+ones below. `decision` keeps its position and is rewritten only for rows 2b
+drops. Stage 3 does not read this file yet.
+
+Rows 2a discarded, and sentinels, get every column below blank. The label
+fields are in the order the model returns them, evidence first.
+
+- `title_evidence_for_page_type`: quote from the title behind `page_type`
+- `url_evidence_for_page_type`: quote from the URL behind `page_type`
+- `page_type`: `tabletop_club`, `conglomerate`, `other` or `unknown`
+- `page_type_certainty`: `clear` or `probable`
+- `title_evidence_for_institution`: quote from the title behind `institution`
+- `url_evidence_for_institution`: quote from the URL behind `institution`
+- `institution`: `supported`, `not_supported` or `unknown`
+- `institution_certainty`: `clear` or `probable`
+- `triage_status`: blank on success; `api_error` or `invalid_output` when the
+  call failed and the row was kept with blank labels
+- `triage_model`: `config.TRIAGE_MODEL`, for rows sent to the model
+- `triage_prompt_version`: `config.TRIAGE_PROMPT_VERSION`, for rows sent to the model
+
+`decision` gains three values: `discard_wrong_institution`,
+`discard_wrong_page_type` and `discard_wrong_institution_and_wrong_page_type`
+(`schema.TRIAGE_DISCARD_REASONS`).
+
 ## Stage 3: `rendered_results.csv`
 
 Rows with `decision == "keep"` get blank or short page text repaired. All other

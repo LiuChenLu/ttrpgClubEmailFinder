@@ -104,6 +104,58 @@ def is_keep(row: dict) -> bool:
     return row.get("decision") == KEEP
 
 
+# --- Stage 2b: llm_filtered_candidates.csv ------------------------------------
+
+# Evidence fields come first in the model's response so it quotes the text
+# before it commits to a label.
+TRIAGE_LABEL_FIELDNAMES = [
+    "title_evidence_for_page_type", "url_evidence_for_page_type",
+    "page_type", "page_type_certainty",
+    "title_evidence_for_institution", "url_evidence_for_institution",
+    "institution", "institution_certainty",
+]
+# Appended after every Stage 2a column. `decision` keeps its Stage 2a position
+# and is rewritten by 2b for the rows it drops.
+TRIAGE_NEW_FIELDNAMES = [
+    *TRIAGE_LABEL_FIELDNAMES,
+    "triage_status", "triage_model", "triage_prompt_version",
+]
+LLM_FILTERED_FIELDNAMES = [*FILTERED_FIELDNAMES, *TRIAGE_NEW_FIELDNAMES]
+
+PAGE_TYPE_OTHER = "other"
+INSTITUTION_NOT_SUPPORTED = "not_supported"
+INSTITUTION_UNKNOWN = "unknown"
+CERTAINTY_PROBABLE = "probable"
+# The allowed values of each enum field in a model response.
+TRIAGE_ENUM_VALUES = {
+    "page_type": ("tabletop_club", "conglomerate", PAGE_TYPE_OTHER, "unknown"),
+    "page_type_certainty": ("clear", CERTAINTY_PROBABLE),
+    "institution": ("supported", INSTITUTION_NOT_SUPPORTED, INSTITUTION_UNKNOWN),
+    "institution_certainty": ("clear", CERTAINTY_PROBABLE),
+}
+
+# What the stubbed LLM call puts in every field. llm_triage.py lets it through
+# the value and evidence checks.
+# TODO: delete STUB_VALUE, and the places that special-case it, once the real
+# LLM call replaces the stub in gemini_client_util.py, so every check applies.
+STUB_VALUE = "stub"
+
+# `triage_status` values. Blank means the row was labeled.
+TRIAGE_STATUS_API_ERROR = "api_error"
+TRIAGE_STATUS_INVALID_OUTPUT = "invalid_output"
+
+# Reasons Stage 2b adds to `decision`, in the order it reports them. Kept apart
+# from DISCARD_REASONS, which is Stage 2a's list.
+REASON_WRONG_INSTITUTION = "wrong_institution"
+REASON_WRONG_PAGE_TYPE = "wrong_page_type"
+REASON_WRONG_INSTITUTION_AND_PAGE_TYPE = "wrong_institution_and_wrong_page_type"
+TRIAGE_DISCARD_REASONS = (
+    REASON_WRONG_INSTITUTION,
+    REASON_WRONG_PAGE_TYPE,
+    REASON_WRONG_INSTITUTION_AND_PAGE_TYPE,
+)
+
+
 # --- Stage 3: rendered_results.csv --------------------------------------------
 
 # The keyword audit columns are only for checking Stage 2's work.

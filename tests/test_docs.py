@@ -22,9 +22,10 @@ def stage_columns_in_data_flow():
     columns = {}
     stage = None
     for line in text.splitlines():
-        heading = re.match(r"## Stage (\d)", line)
+        heading = re.match(r"## Stage (\d+b?)", line)
         if heading:
-            stage = int(heading.group(1))
+            stage = heading.group(1)
+            stage = int(stage) if stage.isdigit() else stage
             columns[stage] = []
             continue
         bullet = re.match(r"- `([a-z_]+)`", line)
@@ -41,6 +42,7 @@ def introduced_by_stage():
         0: stage0,
         1: stage1,
         2: stage2,
+        "2b": schema.TRIAGE_NEW_FIELDNAMES,
         3: schema.RENDERED_NEW_FIELDNAMES,
         4: schema.CONTACT_NEW_FIELDNAMES,
     }

@@ -1,22 +1,26 @@
-# Stage 2 — `filter_candidates.py` (rule-based filtering)
+# Stage 2 — `filter_candidates.py` (rule-based filtering, then LLM triage)
 
 **Input:** `data/search_results.csv` (Stage 1)
 
-**Output:** `data/filtered_candidates.csv`
+**Output:** `data/filtered_candidates.csv` (2a), then
+`data/llm_filtered_candidates.csv` (2b). Stage 3 still reads the 2a file.
 
-Stage 2 is rule-based only. There is no LLM step. A planned LLM triage step is
-specified in
-[`specs/stage2b_llm_triage/`](../../specs/stage2b_llm_triage/spec.md) and is
-**not implemented**.
+`filter_candidates.py` is a thin entry point. Its `main()` runs two steps in
+order:
 
-`filter_candidates.py` is a thin entry point. Its `main()` calls
-`rule_based_filtering.run_rule_based_filter(input_csv, output_csv)`, which holds
-all the logic. That function loads the keyword lists, reads the Stage 1 CSV
-(raising `ValueError` if a Stage 1 column is missing), applies the rules to each
-row, writes every row to the output, and prints a count of rows discarded per
-reason.
+- **2a, rule-based:** `rule_based_filtering.run_rule_based_filter(input_csv,
+  output_csv)` holds all the logic. It loads the keyword lists, reads the Stage 1
+  CSV (raising `ValueError` if a Stage 1 column is missing), applies the rules to
+  each row, writes every row to the output, and prints a count of rows discarded
+  per reason.
+- **2b, LLM triage:** `llm_triage.run_llm_triage(output_csv, llm_output_csv)`
+  reads the 2a file. See [LLM triage (2b)](#llm-triage-2b). **The LLM call is a
+  stub today.**
 
-## Rules
+`--llm-output` sets the 2b path. The full design is in
+[`specs/stage2b_llm_triage/`](../../specs/stage2b_llm_triage/spec.md).
+
+## Rules (2a)
 
 A row is discarded for the first of these that matches, checked in this order:
 
@@ -90,8 +94,54 @@ stage sees it.
 - Tests: `tests/test_rule_based_filtering.py`,
   `tests/test_filter_candidates.py`.
 
+## LLM triage (2b)
+
+`llm_triage.py` holds all the pre and post processing and is deterministic. The
+model call is `gemini_client_util.label_result`, passed to
+`run_llm_triage`/`triage_row` as an argument, so tests and a future swap never
+touch the logic. Columns and decision values: [`data_flow.md`](../data_flow.md).
+
+1. **Preprocessing.** Only rows where `schema.is_keep(row)` is true and that
+   aren't sentinels are sent. `build_triage_input` sends the official name,
+   official `aliases` (not `generated_aliases`), title, URL and
+   `domain_relation`. Snippet and page text are not sent. `domain_relation` is
+   `on_domain` when `is_on_domain` finds the result host equal to, or a
+   subdomain of, the last two labels of `website`'s host (scheme, `www.`, port,
+   case, trailing dots, path and query ignored). IP addresses and invalid input
+   give `not_on_domain`.
+2. **Response checks.** `validate_response` needs every field of
+   `schema.TRIAGE_LABEL_FIELDNAMES` as a string, with enum values in
+   `schema.TRIAGE_ENUM_VALUES`. `check_evidence` blanks a quote that isn't a
+   case-insensitive substring of the title or URL as sent and sets its
+   certainty to `probable`. `not_supported` with no passing evidence becomes
+   `unknown`.
+3. **Post processing.** `drop_reason` gives `wrong_institution` (`institution`
+   is `not_supported`), `wrong_page_type` (`page_type` is `other`) or
+   `wrong_institution_and_wrong_page_type`, written as `decision=discard_<reason>`.
+   Anything else keeps the row, `unknown` included.
+4. **Failure handling.** Fails open. An exception from the client gives
+   `triage_status=api_error`. A response still invalid after
+   `TRIAGE_MAX_ATTEMPTS` gives `invalid_output`. Either keeps the row with blank
+   labels.
+
+Rows 2a discarded are copied through, and the new columns are blank.
+
+### Stubs
+
+- `gemini_client_util.label_result` makes no call and returns `"stub"` for every
+  field. Every row that is sent is kept, and `TRIAGE_MODEL` and
+  `TRIAGE_PROMPT_VERSION` are `stub`.
+- `schema.STUB_VALUE` passes the enum check in `validate_response` and the
+  evidence check in `check_evidence`. Delete it, and those two exemptions, when
+  the real call lands.
+
 ## Open gaps
 
 - Deduplicate URLs across institutions to catch duplicate clubs from colleges
   that have multiple campuses. Not implemented.
-- LLM-based triage (wrong-school and non-club detection): see the spec above.
+- The LLM call, `config/triage_prompt.md`, few-shot examples,
+  retry with backoff for 429/5xx, and the final `TRIAGE_MODEL` are not
+  implemented (see [Stubs](#stubs)). Stage 3 doesn't read the 2b file yet.
+- `is_on_domain` takes the last two labels as the registrable domain, which is
+  right for `.edu` only. Schools in one system (CUNY, KCTCS, PSU) share a domain,
+  so their pages count as `on_domain` for each other (accepted).

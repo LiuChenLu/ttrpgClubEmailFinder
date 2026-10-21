@@ -9,7 +9,6 @@ import csv
 import io
 import re
 from math import radians, sin, cos, asin, sqrt
-from urllib.parse import urlparse
 
 from config import (
     EXCLUDED_INSTITUTION_NAMES_PATH,
@@ -25,6 +24,7 @@ from config import (
     load_word_list,
 )
 from schema import INSTITUTION_FIELDNAMES
+from url_parsing_utils import extract_host
 
 INPUT_DATA_PATH = Path(IPEDS_DB_PATH)
 OUTPUT_DATA_PATH = Path(INSTITUTIONS_CSV)
@@ -47,10 +47,8 @@ def distance(lat1, lon1, lat2, lon2):
 def is_edu(url):
     if pd.isna(url):
         return False
-    host = urlparse(
-        "//" + re.sub(r"^\w+://", "", url.strip().lower())
-    ).hostname
-    return bool(host) and host.endswith(".edu")
+    host = extract_host(url)
+    return host is not None and host.endswith(".edu")
 
 
 def normalize_aliases(aliases):
