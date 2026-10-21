@@ -1,34 +1,19 @@
 # Triage label rules
 
 **Status:** draft. **Not implemented:** no code applies these rules yet. **Docs
-to update when it lands:** none directly. These rules feed the triage prompt
-(`config/triage_prompt.md`), the alias audit and eval labeling. See
-[spec.md](spec.md).
-
-Source of truth for the triage prompt, the alias audit and eval labeling.
-
-## Scope
-
-After rule-based filtering in Stage 2, an LLM model would be used to filter
-results that are likely irrelevant to finding a TTRPG club.
-
-Earlier stages already narrow the input and are documented in
-[`docs/stages/`](../../docs/stages/stage2_filter_candidates.md) (stages 0 to 2).
-These rules cover what still gets through. How this step would run is in
+to update when it lands:** none directly. Source of truth for the triage prompt
+(`config/triage_prompt.md`), the alias audit and eval labeling. How the step
+runs, including the inputs and the keep/drop decision, is in
 [spec.md](spec.md).
 
 ## Input
 
-For each search result, the model is given:
+The fields the model receives and how they are computed are in
+[spec.md](spec.md#preprocessing).
 
-- the target institution's name and aliases
-- the result URL and title
-- `domain_relation`: `on_domain` if the result is hosted on the institution's
-  own domain, otherwise `not_on_domain`. How it is computed: [spec.md](spec.md).
-
-`on_domain` is a strong signal that the page is associated with the school.
-`not_on_domain` is not a strong signal that it is NOT, because most true club
-pages are hosted off the university domain.
+`domain_relation` of `on_domain` is a strong signal that the page is associated
+with the school. `not_on_domain` is not a strong signal that it is NOT, because
+most true club pages are hosted off the university domain.
 
 ## Output
 
@@ -44,74 +29,87 @@ Apply in order. The first match wins.
 
 1. `conglomerate`: lists many student organizations (directory, category listing
    or vendor search page), regardless of topic.
+   - A "Campus clubs" or "Student organizations" page.
+   - A topic category page such as "Recreation & Gaming".
 2. `tabletop_club`: one organization focused on tabletop RPGs, or on several
-   tabletop games (board, card, miniature). A single-TTRPG club (D&D only)
-   qualifies. A club for a single non-RPG game does not.
-3. `other`: known to be another type of page, such as a library page, a blog, a
-   store, etc.
+   tabletop games (board, card, miniature).
+   - Qualifies:
+     - A single-TTRPG club (D&D only).
+     - A general board game club.
+     - A club for two or more tabletop games (Magic + Warhammer).
+     - "Gaming Club" with no qualifier, with `probable` certainty. A
+       deliberate lean toward keeping (see
+       [spec.md](spec.md#design-priority-recall)).
+     - An anime-and-gaming society. They may run tabletop.
+     - A social or link page for one club, when that club qualifies.
+     - An event page from a club that is clearly tabletop related.
+   - Does not qualify (falls through to `other`):
+     - A club for a single non-RPG game (chess, Catan, Scrabble, Magic,
+       Warhammer, Pokemon TCG).
+     - An esports or video game club.
+     - A game design or development club, even if it mentions tabletop.
+3. `other`: known to be another type of page. Topic keywords alone never make a
+   club.
+   - A library page, a store, a publisher, a blog or a thesis, even if it is
+     about gaming.
+   - An article.
+   - An event page from an organization that is not a tabletop club (e.g. a
+     postdoc association).
+   - A social or link page for a club that does not qualify under rule 2.
 4. `unknown`: not possible to tell.
 
 ### institution
 
-Compare whole institution names. A word the result shares with the target's name
-(a state, a city, "State", "Community") is not sufficient support when the
-result names a different institution. For example, Central Connecticut State
-University is not the University of Connecticut despite sharing the word
-"Connecticut".
+Compare whole institution names:
+
+- A word the result shares with the target's name (a state, a city, "State",
+  "Community") does not make it the target.
+  - Central Connecticut State University is not the University of Connecticut
+    despite sharing the word "Connecticut".
+  - North Seattle College is not South Seattle College.
+- A campus of the target, or the system the target belongs to, is the target,
+  not a different institution.
+  - Searching the Gateway campus of CT State: a TTRPG club at its Manchester
+    campus.
+  - Searching the Manchester campus: a club listing for CT State overall.
 
 Apply in order. The first match wins.
 
-1. `unknown`: the URL or title names both the target and a different institution
-   (e.g. a joint event or a page comparing two schools).
-2. `not_supported`: the URL or title names a different institution, or is
-   clearly not tied to any institution (a store, a library, a personal blog).
+1. `unknown`: the URL or title names both the target and a different
+   institution.
+   - A joint event, or a page comparing two schools.
+2. `not_supported`: the URL or title positively ties the page to someone other
+   than the target. Never assign it because evidence is missing. It is either:
+   - a different school, named in the title or URL or by its domain; or
+   - an organization unconnected to any school, when the URL and title do not
+     name the target:
+     - a game company (a Wizards of the Coast page)
+     - a store or a public library
+     - a fan wiki (a Fandom page about Magic characters)
+     - a personal blog
 3. `supported`: the URL or title names the target: its name, an alias, a common
    nickname (UConn), a distinctive part of its name as a whole word (`mit`
    inside `summit` does not count), or its domain.
-4. `unknown`: not possible to tell.
-
-A campus of the target, or the system the target belongs to, is the target, not
-a different institution (see the case table below).
+   - An article about the target institution.
+4. `unknown`: not possible to tell, including a page that names no one.
 
 ### certainty
 
 `page_type_certainty` and `institution_certainty` express doubt about a label.
+Label what the result most likely is, and express doubt here rather than by
+choosing a different label.
 
 - `clear`: the URL and title settle the label, and a second labeler would not
   choose differently.
 - `probable`: the label is the most likely reading, but the URL and title leave
-  room for another (e.g. a club name that doesn't say what the club plays).
+  room for another. Example: ["Gaming Club"](#page_type) with no qualifier.
 
-## Example Classifications
+## Evidence
 
-### Page type cases
-
-| Case                                                                     | page_type                                      | Note                                                          |
-| ------------------------------------------------------------------------ | ---------------------------------------------- | ------------------------------------------------------------- |
-| "Gaming Club", no qualifier                                              | `tabletop_club`                                | deliberate hedge toward keep                                  |
-| General board game club                                                  | `tabletop_club`                                |                                                               |
-| Two or more tabletop games (Magic + Warhammer)                           | `tabletop_club`                                |                                                               |
-| Anime-and-gaming society                                                 | `tabletop_club`                                | they may run tabletop                                         |
-| Social or link page for one club                                         | `tabletop_club` or `other` by the club's focus |                                                               |
-| "Recreation & Gaming" category page                                      | `conglomerate`                                 |                                                               |
-| "Campus clubs" or "Student organizations" page                           | `conglomerate`                                 |                                                               |
-| Esports or video game club                                               | `other`                                        |                                                               |
-| Game design or development club                                          | `other`                                        | even if it mentions tabletop                                  |
-| Single-game club (chess, Catan, Scrabble, Magic, Warhammer, Pokemon TCG) | `other`                                        |                                                               |
-| Event page for a club meeting                                            | `other`                                        | the event is often a one-off and the club is not a ttrpg club |
-| Thesis, blog, store or publisher about gaming                            | `other`                                        | topic keywords alone never make a club                        |
-| An article                                                               | `other`                                        |                                                               |
-
-### Institution cases
-
-| Case                                                                                                                                                          | institution     | Note                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------ |
-| TTRPG club for a campus of the same institution (e.g. ttrpg club for the Manchester campus of CT State when we're searching for Gateway campus)               | `supported`     | clubs are deduplicated later, this is harmless to keep |
-| TTRPG club for the overall institution when searching a campus of the institution (e.g. club listing for CT State when we're searching for Manchester campus) | `supported`     | clubs are deduplicated later, this is harmless to keep |
-| Different school sharing a word with the target (searching South Seattle College, result is North Seattle College)                                            | `not_supported` | shared words don't count                               |
-| Result names both the target and a different school                                                                                                           | `unknown`       | real doubt; kept                                       |
-| Community group with no student affiliation (game store, library)                                                                                             | `not_supported` |                                                        |
-| An article about the target institution                                                                                                                       | `supported`     |                                                        |
+Evidence is the substring of the title or URL that drove a label, matched
+ignoring case, and empty when nothing matched. `title_evidence_*` quotes the
+title and `url_evidence_*` quotes the URL. The code checks on evidence are in
+[spec.md](spec.md#model-response).
 
 ## Worked examples
 

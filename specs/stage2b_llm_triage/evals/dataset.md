@@ -1,5 +1,11 @@
 # LLM Page-Classifier Eval: Dataset Documentation
 
+**Status:** generated, not trusted. This file and `eval.csv` do not match
+[label_rules.md](../label_rules.md) (label names, definitions and file names
+differ). Do not use either as ground truth or as a source for what a label
+means; use [label_rules.md](../label_rules.md). They will be rewritten to match
+later.
+
 _Companion to `llm_page_classifier_eval.csv` · 49 rows · written 2026-10-15 for
 the TTRPG club finder pipeline_
 
