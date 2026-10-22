@@ -10,9 +10,6 @@ Fails open: a row whose call fails is kept with blank labels and a
 
 Importing this module reads no files and needs no network access or API key.
 run_llm_triage() reads Stage 2a's CSV and writes the Stage 2b CSV.
-
-evoke this with:
-  python llm_triage.py --input INPUT_FILE_PATH --output OUTPUT_FILE_PATH
 """
 
 from __future__ import annotations
