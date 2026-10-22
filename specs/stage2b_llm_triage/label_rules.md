@@ -137,4 +137,4 @@ title and `url_evidence_*` quotes the URL. The code checks on evidence are in
 
 ## Worked examples
 
-Input and expected output pairs are in [examples.jsonl](examples.jsonl).
+Input and expected output pairs are in [llm_triage_examples.jsonl](../../config/llm_triage_examples.jsonl).

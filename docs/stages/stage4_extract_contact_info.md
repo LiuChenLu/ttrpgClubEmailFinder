@@ -8,7 +8,7 @@ This stage is implemented as offline text processing, with no network calls. It
 preserves every Stage 3 row and appends contact-signal fields. It does not
 classify school attribution, identify club names, or split directory pages into
 individual clubs. A draft design for an LLM-based version of this work lives in
-[`specs/llm_contact_extraction.md`](../../specs/llm_contact_extraction.md); none
+[`specs/backlog/llm_contact_extraction.md`](../../specs/backlog/llm_contact_extraction.md); none
 of it is implemented.
 
 Rows with `decision` exactly `keep` are scanned for emails, Discord invite URLs,

@@ -86,8 +86,19 @@ RAW_CONTENT_PREVIEW_COUNT = 5
 # labeled it. Placeholders until the eval picks a model.
 TRIAGE_MODEL = "stub"
 TRIAGE_PROMPT_VERSION = "stub"
-# For the real client; the stub ignores it.
+# For the real client; the stub ignores the settings below.
 TRIAGE_TEMPERATURE = 0
+# A ThinkingLevel name: MINIMAL, LOW, MEDIUM or HIGH. Labeling from a title and
+# URL is a short task, so start low and raise it only if the eval shows a gain.
+TRIAGE_THINKING_LEVEL = "LOW"
+# Total tries per call, and the backoff between them, for 429 and 5xx responses.
+# The client does these; TRIAGE_MAX_ATTEMPTS only counts invalid responses.
+TRIAGE_API_ATTEMPTS = 4
+TRIAGE_API_INITIAL_DELAY_S = 1.0
+TRIAGE_API_MAX_DELAY_S = 30.0
+# The rubric and the few-shot examples sent before every row.
+TRIAGE_PROMPT_PATH = "./config/triage_prompt.md"
+TRIAGE_EXAMPLES_PATH = "./config/llm_triage_examples.jsonl"
 # One try plus one retry when the response is invalid. Retrying 429/5xx belongs
 # to the client, not to this count.
 TRIAGE_MAX_ATTEMPTS = 2

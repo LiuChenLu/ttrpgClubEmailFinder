@@ -10,8 +10,8 @@ asking an agent to implement them.
 | Spec                                                         | Status              | Summary                                                                                                                            |
 | ------------------------------------------------------------ | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | [stage2b_llm_triage/](stage2b_llm_triage/spec.md)            | draft               | LLM labels each rule-kept result by URL and title (page type, institution match) and drops likely non-club or wrong-school results |
-| [llm_contact_extraction.md](llm_contact_extraction.md)       | draft, early design | One LLM call per page to identify the school, enumerate clubs and grade contact info per club. Partly out of date; see its header  |
-| [query_template_candidates.md](query_template_candidates.md) | draft               | Alternative Stage 1 query templates, kept out of `config/` because the code doesn't read them                                      |
+| [llm_contact_extraction.md](backlog/llm_contact_extraction.md) | draft, early design | One LLM call per page to identify the school, enumerate clubs and grade contact info per club. Partly out of date; see its header  |
+| [query_template_candidates.md](backlog/query_template_candidates.md) | draft       | Alternative Stage 1 query templates, kept out of `config/` because the code doesn't read them                                      |
 
 ## Header every spec must start with
 

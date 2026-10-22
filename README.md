@@ -44,7 +44,8 @@ playwright install chromium
   (gitignored). Stages 1 and 3 need it.
 - Stage 0 needs the IPEDS Access database at the path in `config.py`
   (`IPEDS_DB_PATH`) and the `mdb-export` command from `mdbtools`.
-- The scratch scripts in `tmp/` also use `google-genai`: `pip install -e ".[scratch]"`.
+- Stage 2b and the scratch scripts in `tmp/` use `google-genai`, which the base
+  install includes. It reads `GEMINI_API_KEY` from `.env`.
 
 ## Tests
 

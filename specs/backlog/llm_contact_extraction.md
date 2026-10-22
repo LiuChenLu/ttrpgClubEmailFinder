@@ -8,7 +8,7 @@ are out of date. **Scope:** v1 — single model, single combined call, no cascad
 extend `extract_contact_info.py`. **Docs to update when it lands:**
 `docs/architecture.md`, `docs/data_flow.md` (new CSV columns),
 `docs/stages/stage4_extract_contact_info.md`. **Related:**
-[stage2b_llm_triage/spec.md](stage2b_llm_triage/spec.md) is a separate, cheaper
+[stage2b_llm_triage/spec.md](../stage2b_llm_triage/spec.md) is a separate, cheaper
 LLM step that only reads URL and title.
 
 ## Summary

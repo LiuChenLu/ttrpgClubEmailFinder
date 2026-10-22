@@ -8,11 +8,11 @@ dependencies = [
     "python-dotenv",
     "tavily-python",
     "playwright",
+    "google-genai",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest"]
-scratch = ["google-genai"]
 
 [tool.setuptools]
 # The stage scripts are top-level modules, run as `python script.py`.

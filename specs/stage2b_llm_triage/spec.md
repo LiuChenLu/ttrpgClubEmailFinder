@@ -4,12 +4,12 @@
 `gemini_client_util.py`, and `is_on_domain` (see
 [stage 2](../../docs/stages/stage2_filter_candidates.md#llm-triage-2b)). **Not
 landed:** the real call, `config/triage_prompt.md`,
-`config/triage_examples.jsonl`, retry with backoff, and Stage 3 reading the 2b
+`config/llm_triage_examples.jsonl`, retry with backoff, and Stage 3 reading the 2b
 file. Where this file disagrees with the code, the code is what is true today.
 **Implements in:** new
 `llm_triage.py`; `filter_candidates.py` (call it after `rule_based_filtering`);
 `config.py` (`TRIAGE_*` constants); new `config/triage_prompt.md` and
-`config/triage_examples.jsonl`; tests. **Docs to update when it lands:**
+`config/llm_triage_examples.jsonl`; tests. **Docs to update when it lands:**
 `docs/stages/stage2_filter_candidates.md` (add the 2b step), `docs/data_flow.md`
 (Stage 2 columns, see "Planned CSV columns" below), `docs/architecture.md`
 (pipeline table, "not implemented" list), and
@@ -27,7 +27,7 @@ Each fact has one home. Other files link to it instead of restating it.
 | ---------------------------------------------------------------------- | -------------------------------------------------- |
 | Label meanings, ordered rules, examples, certainty levels, evidence    | [label_rules.md](label_rules.md)                   |
 | Output field names, order and enum values                              | [schema.json](schema.json)                         |
-| Worked examples                                                        | [examples.jsonl](examples.jsonl)                   |
+| Worked examples                                                        | [llm_triage_examples.jsonl](../../config/llm_triage_examples.jsonl)                   |
 | Fields sent to the model, how `domain_relation` is computed            | [Preprocessing](#preprocessing)                    |
 | Code checks on the model's response                                    | [Model Response](#model-response)                  |
 | Why the step leans toward keeping                                      | [Design priority: recall](#design-priority-recall) |
@@ -152,9 +152,9 @@ to an error value. Retry 429 and 5xx responses with backoff. The reason is in
   not pasted from it. Notes written for authors are left out.
 - Order: rubric and examples first, identical for every row so they can be
   cached, then the row input.
-- Few-shot examples come from [examples.jsonl](examples.jsonl) (copied to
-  `config/triage_examples.jsonl` when implemented), which holds dev examples
-  only, never the held-out eval set. A unit test runs every example through the
+- Few-shot examples are in
+  [llm_triage_examples.jsonl](../../config/llm_triage_examples.jsonl), which
+  holds dev examples only, never the held-out eval set. A unit test runs every example through the
   evidence check.
 - `TRIAGE_MODEL`, `TRIAGE_PROMPT_VERSION` and temperature 0 are set in
   `config.py`.
