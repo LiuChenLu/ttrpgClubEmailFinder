@@ -51,8 +51,8 @@ Apply in order. The first match wins.
 
 Apply in order. The first match wins.
 
-1. `unknown`: the URL or title names both the target and a different
-   institution (a joint event, a page comparing two schools).
+1. `unknown`: the URL or title names both the target and a different institution
+   (a joint event, a page comparing two schools).
 2. `not_supported`: the URL or title positively ties the page to someone other
    than the target. The other institution may share words with the target
    (Central Connecticut State University is not the University of Connecticut;
@@ -84,18 +84,19 @@ by choosing a different label. Only `clear` and `probable` are allowed. Use
 
 `page_type_certainty`:
 
-- `clear` for `tabletop_club` needs both: (1) a club word (club, society, guild)
-  or a campus clubs platform (campusgroups, engage, campuslabs, presence,
-  involve); and (2) a tabletop word ("tabletop", "board game", "ttrpg"), a
-  tabletop RPG name (like "dnd"), or vocabulary used only in tabletop RPGs
-  ("dungeon master", "skill check", "game master").
+- `clear` for `tabletop_club` needs both: (1) a group of people noun (e.g.
+  "gamers", "adventurers"), a club word (club, society, guild) or is on a campus
+  clubs platform (campusgroups, engage, campuslabs, presence, involve); and (2)
+  a tabletop word ("tabletop", "board game", "ttrpg"), a tabletop RPG name (like
+  "dnd"), or vocabulary used only in tabletop RPGs ("dungeon master", "skill
+  check", "game master").
 - `clear` for `conglomerate`: the URL or title says what it is ("student
   organizations", "clubs and activities", "campus groups"), uses directory
   wording ("browse organizations", "find a club", "all student groups"), or is
   on a campus clubs platform.
-- `probable` for `tabletop_club`: it has words often tied to tabletop gaming
-  ("adventurers guild", "hit point", "dice", "campaign"), or you can't tell what
-  kind of gaming club it is.
+- `probable` for `tabletop_club`: either: (1) suggest group of people and it has
+  words often tied to tabletop gaming ("adventurers guild", "hit point", "dice",
+  "campaign"); or (2) you can't tell what kind of gaming club it is.
 - `probable` for `conglomerate`: it has words often tied to student
   organizations ("hub", "student engagement", "student life").
 - `clear` for `other` is not defined above: use `clear` when the page plainly is
