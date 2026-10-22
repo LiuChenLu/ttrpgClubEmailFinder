@@ -25,9 +25,8 @@ except Stage 0 takes `--input` and `--output`. Column lists are in
 | 3     | `render_candidates.py`                                   | `data/rendered_results.csv`     | [stage3](stages/stage3_render_candidates.md)         |
 | 4     | `extract_contact_info.py`                                | `data/ttrpg_clubs_contacts.csv` | [stage4](stages/stage4_extract_contact_info.md)      |
 
-No stage calls an LLM today: Stage 2b's LLM call is a stub that labels every
-field `stub`, and Stage 3 still reads the 2a file. Not implemented (see
-`specs/`): the real LLM call in triage, club identification, school
+Only Stage 2b calls an LLM (Gemini, labels from URL and title), and Stage 3
+still reads the 2a file. Not implemented (see `specs/`): club identification, school
 attribution, directory-page splitting, URL deduplication across campuses,
 checkpoint/resume.
 
@@ -40,7 +39,7 @@ checkpoint/resume.
 | A column list, decision value or discard reason   | `schema.py`                                                          |
 | The `--input` / `--output` options                | `stage_cli.py`                                                       |
 | Tavily client, `.env` loading                     | `tavily_client_util.py`                                              |
-| The Stage 2b LLM call (a stub today)              | `gemini_client_util.py`                                              |
+| The Stage 2b LLM call, prompt and examples        | `gemini_client_util.py`, `config/triage_prompt.md`, `config/llm_triage_examples.jsonl` |
 | `sanitize_for_csv`, sentinel markers, `is_sentinel` | `search_row_format_util.py`                                        |
 | URL host and registrable-domain parsing           | `url_parsing_utils.py`                                               |
 

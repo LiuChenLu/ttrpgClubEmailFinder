@@ -37,7 +37,6 @@ from schema import (
     REASON_WRONG_INSTITUTION,
     REASON_WRONG_INSTITUTION_AND_PAGE_TYPE,
     REASON_WRONG_PAGE_TYPE,
-    STUB_VALUE,
     TRIAGE_DISCARD_REASONS,
     TRIAGE_ENUM_VALUES,
     TRIAGE_LABEL_FIELDNAMES,
@@ -119,10 +118,6 @@ def build_triage_input(row: dict) -> dict:
 def validate_response(response: object) -> dict:
     """Raise InvalidResponse unless every schema field is present, a string,
     and (for the enum fields) an allowed value.
-
-    TODO: STUB_VALUE is let through the enum check so the stubbed call passes.
-    Remove the `!= STUB_VALUE` exemption once the real call is in, so the value
-    checks apply.
     """
     if not isinstance(response, dict):
         raise InvalidResponse(f"expected an object, got {type(response).__name__}")
@@ -133,7 +128,7 @@ def validate_response(response: object) -> dict:
             raise InvalidResponse(f"{name} is not a string")
     for name, allowed in TRIAGE_ENUM_VALUES.items():
         value = response[name]
-        if value != STUB_VALUE and value not in allowed:
+        if value not in allowed:
             raise InvalidResponse(f"{name}={value!r} is not one of {allowed}")
     return dict(response)
 
@@ -145,14 +140,11 @@ def check_evidence(labels: dict, triage_input: dict) -> dict:
        title or URL as sent is blanked, and its certainty becomes `probable`.
     2. `not_supported` needs evidence that passed check 1, otherwise
        `institution` becomes `unknown`: never drop on missing evidence.
-
-    TODO: STUB_VALUE evidence is let through check 1 so the stubbed call passes.
-    Remove the exemption with the one in validate_response.
     """
     checked = dict(labels)
     for field, source, certainty_field in EVIDENCE_CHECKS:
         quote = checked[field]
-        if not quote or quote == STUB_VALUE:
+        if not quote:
             continue
         if quote.lower() not in triage_input[source].lower():
             checked[field] = ""
@@ -170,8 +162,8 @@ def check_evidence(labels: dict, triage_input: dict) -> dict:
 def drop_reason(labels: dict) -> str | None:
     """The Stage 2b reason to drop a row, or None to keep it.
 
-    Only `not_supported` and `other` drop; `unknown` and any other value (the
-    stub included) keep. Tune this on the *_certainty and *_evidence_* fields.
+    Only `not_supported` and `other` drop; `unknown` keeps. Tune this on the
+    *_certainty and *_evidence_* fields.
     """
     wrong_institution = labels["institution"] == INSTITUTION_NOT_SUPPORTED
     wrong_page_type = labels["page_type"] == PAGE_TYPE_OTHER

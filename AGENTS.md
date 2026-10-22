@@ -6,7 +6,7 @@ Instructions for AI coding agents. Human overview: [README.md](README.md).
 
 A pipeline (Stages 0 to 4, one script each) that finds contact info for TTRPG
 clubs at US colleges. Map of stages, files and pitfalls:
-[docs/architecture.md](docs/architecture.md). There is **no LLM stage**.
+[docs/architecture.md](docs/architecture.md). The only LLM call is Stage 2b triage (Gemini).
 
 ## Which source is true
 
@@ -43,6 +43,11 @@ source .venv/bin/activate
 python -m pytest -q          # offline; must pass before you finish
 python fetch_candidates.py --limit 3     # a sample Stage 1 run
 ```
+
+Stage 2b calls Gemini, which spends quota. `tests/test_llm_triage_gemini_live_network.py`
+is skipped unless `RUN_GEMINI_LIVE_TESTS=1`; **never set it, or run
+`llm_triage.py` on a real input, without the user's approval.** Use a small
+`--input`/`--output` sample.
 
 Stage 1 and Stage 3 spend Tavily credits. Stage 1 refuses a run estimated above
 `MAX_UNCONFIRMED_SEARCH_CREDITS` unless given `--yes`; **never pass `--yes`, or

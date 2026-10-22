@@ -14,8 +14,7 @@ order:
   each row, writes every row to the output, and prints a count of rows discarded
   per reason.
 - **2b, LLM triage:** `llm_triage.run_llm_triage(output_csv, llm_output_csv)`
-  reads the 2a file. See [LLM triage (2b)](#llm-triage-2b). **The LLM call is a
-  stub today.**
+  reads the 2a file. See [LLM triage (2b)](#llm-triage-2b).
 
 `--llm-output` sets the 2b path. The full design is in
 [`specs/stage2b_llm_triage/`](../../specs/stage2b_llm_triage/spec.md).
@@ -99,7 +98,13 @@ stage sees it.
 `llm_triage.py` holds all the pre and post processing and is deterministic. The
 model call is `gemini_client_util.label_result`, passed to
 `run_llm_triage`/`triage_row` as an argument, so tests and a future swap never
-touch the logic. Columns and decision values: [`data_flow.md`](../data_flow.md).
+touch the logic. It calls `TRIAGE_MODEL` (`gemini-3.5-flash-lite`) at
+`TRIAGE_TEMPERATURE` and `TRIAGE_THINKING_LEVEL`, with `config/triage_prompt.md`
+and `config/llm_triage_examples.jsonl` as the system prompt and the row as the
+message. The reply schema is built from `schema.py`. The client reads
+`GEMINI_API_KEY` from `.env` on first use, and retries 429 and 5xx up to
+`TRIAGE_API_ATTEMPTS` with backoff. A reply that isn't a JSON object comes back
+as `{}`, so it is retried as invalid output. Columns and decision values: [`data_flow.md`](../data_flow.md).
 
 1. **Preprocessing.** Only rows where `schema.is_keep(row)` is true and that
    aren't sentinels are sent. `build_triage_input` sends the official name,
@@ -126,22 +131,14 @@ touch the logic. Columns and decision values: [`data_flow.md`](../data_flow.md).
 
 Rows 2a discarded are copied through, and the new columns are blank.
 
-### Stubs
-
-- `gemini_client_util.label_result` makes no call and returns `"stub"` for every
-  field. Every row that is sent is kept, and `TRIAGE_MODEL` and
-  `TRIAGE_PROMPT_VERSION` are `stub`.
-- `schema.STUB_VALUE` passes the enum check in `validate_response` and the
-  evidence check in `check_evidence`. Delete it, and those two exemptions, when
-  the real call lands.
-
 ## Open gaps
 
 - Deduplicate URLs across institutions to catch duplicate clubs from colleges
   that have multiple campuses. Not implemented.
-- The LLM call, `config/triage_prompt.md`, few-shot examples,
-  retry with backoff for 429/5xx, and the final `TRIAGE_MODEL` are not
-  implemented (see [Stubs](#stubs)). Stage 3 doesn't read the 2b file yet.
+- `TRIAGE_MODEL`, `TRIAGE_THINKING_LEVEL`, the prompt (`v0`) and the five
+  few-shot examples are a first guess and haven't been evaluated. No eval exists.
+- Stage 3 doesn't read the 2b file yet.
+- Each call prints an "automatic function calling" warning from `google-genai`.
 - `is_on_domain` takes the last two labels as the registrable domain, which is
   right for `.edu` only. Schools in one system (CUNY, KCTCS, PSU) share a domain,
   so their pages count as `on_domain` for each other (accepted).

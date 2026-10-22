@@ -1,11 +1,10 @@
 # Spec: LLM triage in Stage 2b (`llm_triage.py`)
 
-**Status:** in-progress. **Landed:** the harness, with the LLM call stubbed in
-`gemini_client_util.py`, and `is_on_domain` (see
+**Status:** in-progress. **Landed:** the harness, `is_on_domain`, the Gemini
+call in `gemini_client_util.py` with retry and backoff, a first-guess
+`config/triage_prompt.md` and `config/llm_triage_examples.jsonl` (see
 [stage 2](../../docs/stages/stage2_filter_candidates.md#llm-triage-2b)). **Not
-landed:** the real call, `config/triage_prompt.md`,
-`config/llm_triage_examples.jsonl`, retry with backoff, and Stage 3 reading the 2b
-file. Where this file disagrees with the code, the code is what is true today.
+landed:** an eval, a tuned model and prompt, and Stage 3 reading the 2b file. Where this file disagrees with the code, the code is what is true today.
 **Implements in:** new
 `llm_triage.py`; `filter_candidates.py` (call it after `rule_based_filtering`);
 `config.py` (`TRIAGE_*` constants); new `config/triage_prompt.md` and
@@ -161,8 +160,8 @@ to an error value. Retry 429 and 5xx responses with backoff. The reason is in
 
 ## Open gaps
 
-- `TRIAGE_MODEL` and the sampling settings are placeholders until the eval picks
-  a model.
+- `TRIAGE_MODEL`, the thinking level and the prompt are a first guess until the
+  eval picks them.
 - Whether sending the snippet would improve accuracy has not been measured.
 - No eval dataset, metrics or baselines exist yet. `evals/` holds generated
   files that are not trusted.

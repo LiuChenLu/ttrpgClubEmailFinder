@@ -51,8 +51,8 @@ columns are `decision`, then the Stage 1 columns **without `result_score`**
 
 ## Stage 2b: `llm_filtered_candidates.csv`
 
-LLM triage, run by `filter_candidates.py` after Stage 2a. **The LLM call is a
-stub today**, so every label is `stub` (see [stage 2](stages/stage2_filter_candidates.md)).
+LLM triage, run by `filter_candidates.py` after Stage 2a (see
+[stage 2](stages/stage2_filter_candidates.md)).
 Every Stage 2a row is written. The columns are all Stage 2a columns, then the
 ones below. `decision` keeps its position and is rewritten only for rows 2b
 drops. Stage 3 does not read this file yet.

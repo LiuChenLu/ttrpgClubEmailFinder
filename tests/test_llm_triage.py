@@ -54,13 +54,7 @@ def fixed_labels(**overrides):
     return lambda triage_input: make_labels(**overrides)
 
 
-# --- stub client and stubbed domain check -----------------------------------------
-
-
-def test_stub_client_returns_stub_for_every_schema_field():
-    assert gemini_client_util.label_result({}) == dict.fromkeys(
-        schema.TRIAGE_LABEL_FIELDNAMES, "stub"
-    )
+# --- schema and domain check --------------------------------------------------------
 
 
 def test_schema_py_matches_the_spec_schema_json_in_field_order_and_enums():
@@ -167,12 +161,6 @@ def test_validate_response_rejects_malformed_responses(response):
         llm_triage.validate_response(response)
 
 
-def test_validate_response_lets_the_stub_value_through():
-    stub = gemini_client_util.label_result({})
-
-    assert llm_triage.validate_response(stub) == stub
-
-
 def test_check_evidence_keeps_quotes_found_in_the_input_ignoring_case():
     triage_input = llm_triage.build_triage_input(make_row())
     labels = make_labels(title_evidence_for_page_type="tabletop club")
@@ -229,13 +217,6 @@ def test_not_supported_with_one_passing_evidence_field_stays_not_supported():
     assert checked["institution"] == "not_supported"
 
 
-def test_check_evidence_lets_stub_evidence_through():
-    triage_input = llm_triage.build_triage_input(make_row())
-    stub = gemini_client_util.label_result({})
-
-    assert llm_triage.check_evidence(stub, triage_input) == stub
-
-
 # --- post processing -------------------------------------------------------------------
 
 
@@ -251,7 +232,6 @@ def test_check_evidence_lets_stub_evidence_through():
         ),
         ({"page_type": "unknown", "institution": "unknown"}, None),
         ({"page_type": "conglomerate"}, None),
-        ({"page_type": "stub", "institution": "stub"}, None),
     ],
 )
 def test_drop_reason(overrides, expected):
@@ -272,15 +252,6 @@ def test_every_drop_reason_is_a_listed_triage_discard_reason():
 
 
 # --- one row ----------------------------------------------------------------------------
-
-
-def test_triage_row_with_the_default_stub_keeps_the_row_and_records_stub_labels():
-    result = llm_triage.triage_row(make_row())
-
-    assert result["decision"] == "keep"
-    assert result["triage_status"] == ""
-    assert {result[f] for f in schema.TRIAGE_LABEL_FIELDNAMES} == {"stub"}
-    assert (result["triage_model"], result["triage_prompt_version"]) == ("stub", "stub")
 
 
 def test_triage_row_sends_the_model_only_the_triage_input():
@@ -414,19 +385,6 @@ def test_run_llm_triage_writes_every_row_with_the_schema_columns_and_counts(
     assert "keep: 1" in output
     assert "wrong_page_type: 1" in output
     assert "wrong_institution: 0" in output
-
-
-def test_run_llm_triage_defaults_to_the_stub_client(tmp_path):
-    input_csv = tmp_path / "filtered.csv"
-    output_csv = tmp_path / "llm_filtered.csv"
-    write_filtered_csv(input_csv, [make_row()])
-
-    llm_triage.run_llm_triage(str(input_csv), str(output_csv))
-
-    _, result_rows = read_csv(output_csv)
-    assert result_rows[0]["decision"] == "keep"
-    assert result_rows[0]["page_type"] == "stub"
-    assert result_rows[0]["institution_certainty"] == "stub"
 
 
 def test_run_llm_triage_rejects_missing_columns_without_truncating_output(tmp_path):

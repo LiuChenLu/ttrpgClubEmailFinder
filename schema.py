@@ -134,12 +134,6 @@ TRIAGE_ENUM_VALUES = {
     "institution_certainty": ("clear", CERTAINTY_PROBABLE),
 }
 
-# What the stubbed LLM call puts in every field. llm_triage.py lets it through
-# the value and evidence checks.
-# TODO: delete STUB_VALUE, and the places that special-case it, once the real
-# LLM call replaces the stub in gemini_client_util.py, so every check applies.
-STUB_VALUE = "stub"
-
 # `triage_status` values. Blank means the row was labeled.
 TRIAGE_STATUS_API_ERROR = "api_error"
 TRIAGE_STATUS_INVALID_OUTPUT = "invalid_output"
