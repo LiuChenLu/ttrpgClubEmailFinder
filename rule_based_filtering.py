@@ -35,6 +35,7 @@ from schema import (
     KEYWORD_FIELDNAMES,
     REASON_EVENT,
     REASON_NEWS,
+    REASON_WIKI,
     REASON_NO_KEYWORDS,
     REASON_PDF,
     REASON_SENTINEL_ROW,
@@ -49,7 +50,8 @@ from stage_cli import build_parser
 # Ordered (reason, URL substrings) pairs. The first reason with a hit wins.
 URL_TERMS = (
     (REASON_NEWS, ("blog", "news", "article", "dailydigest", "stories", "story", "forum", "journal")),
-    (REASON_EVENT, ("rsvp", "event", "calendar")),
+    (REASON_EVENT, ("rsvp", "event", "calendar", "2026")),
+    (REASON_WIKI, ("wiki")),
     (REASON_STOREFRONTS, ("store", "shop", "market")),
 )
 
