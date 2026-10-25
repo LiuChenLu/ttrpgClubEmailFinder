@@ -168,6 +168,65 @@ def test_check_evidence_keeps_quotes_found_in_the_input_ignoring_case():
     assert llm_triage.check_evidence(labels, triage_input) == labels
 
 
+@pytest.mark.parametrize(
+    ("title", "evidence"),
+    [
+        (
+            "Club ‘R’ and ’S’ use “T” and ”U”",
+            "Club 'R' and 'S' use \"T\" and \"U\"",
+        ),
+        (
+            "Club 'R' and 'S' use \"T\" and \"U\"",
+            "Club ‘R’ and ’S’ use “T” and ”U”",
+        ),
+    ],
+)
+def test_check_evidence_normalizes_curly_quotes(title, evidence):
+    triage_input = llm_triage.build_triage_input(make_row(result_title=title))
+    labels = make_labels(
+        title_evidence_for_page_type=evidence, title_evidence_for_institution=""
+    )
+
+    checked = llm_triage.check_evidence(labels, triage_input)
+
+    assert checked["title_evidence_for_page_type"] == evidence
+    assert checked["page_type_certainty"] == "clear"
+
+
+@pytest.mark.parametrize(
+    ("source", "source_text", "evidence"),
+    [
+        ("title", "Tabletop & Board Game Club", "Tabletop ＆ Board Game Club"),
+        ("title", "Tabletop ＆ Board Game Club", "Tabletop & Board Game Club"),
+        ("title", "Tabletop ﹠ Board Game Club", "Tabletop & Board Game Club"),
+        ("title", "Tabletop & Board Game Club", "Tabletop ﹠ Board Game Club"),
+        (
+            "url",
+            "https://example.edu/clubs/tabletop%26board-game",
+            "tabletop&board-game",
+        ),
+        (
+            "url",
+            "https://example.edu/clubs/tabletop&board-game",
+            "tabletop%26board-game",
+        ),
+    ],
+)
+def test_check_evidence_normalizes_ampersands(source, source_text, evidence):
+    triage_input = llm_triage.build_triage_input(
+        make_row(**{f"result_{source}": source_text})
+    )
+    evidence_field = f"{source}_evidence_for_page_type"
+    labels = make_labels(
+        **{evidence_field: evidence, "title_evidence_for_institution": ""}
+    )
+
+    checked = llm_triage.check_evidence(labels, triage_input)
+
+    assert checked[evidence_field] == evidence
+    assert checked["page_type_certainty"] == "clear"
+
+
 def test_check_evidence_blanks_a_made_up_quote_and_makes_its_certainty_probable():
     triage_input = llm_triage.build_triage_input(make_row())
     labels = make_labels(

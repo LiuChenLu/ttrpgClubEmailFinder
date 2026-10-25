@@ -53,6 +53,21 @@ from url_parsing_utils import extract_host, registrable_domain
 
 ON_DOMAIN = "on_domain"
 NOT_ON_DOMAIN = "not_on_domain"
+_EVIDENCE_CHARACTERS = str.maketrans(
+    {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\uff06": "&",
+        "\ufe60": "&",
+    }
+)
+
+
+def _normalize_evidence_text(text: str) -> str:
+    return text.replace("%26", "&").translate(_EVIDENCE_CHARACTERS).lower()
+
 
 # (evidence field, the text it must quote, the certainty a failed quote lowers)
 EVIDENCE_CHECKS = (
@@ -146,7 +161,9 @@ def check_evidence(labels: dict, triage_input: dict) -> dict:
         quote = checked[field]
         if not quote:
             continue
-        if quote.lower() not in triage_input[source].lower():
+        if _normalize_evidence_text(quote) not in _normalize_evidence_text(
+            triage_input[source]
+        ):
             checked[field] = ""
             checked[certainty_field] = CERTAINTY_PROBABLE
 

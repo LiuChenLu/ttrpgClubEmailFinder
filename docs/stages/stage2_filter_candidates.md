@@ -117,9 +117,10 @@ as `{}`, so it is retried as invalid output. Columns and decision values: [`data
 2. **Response checks.** `validate_response` needs every field of
    `schema.TRIAGE_LABEL_FIELDNAMES` as a string, with enum values in
    `schema.TRIAGE_ENUM_VALUES`. `check_evidence` blanks a quote that isn't a
-   case-insensitive substring of the title or URL as sent and sets its
-   certainty to `probable`. `not_supported` with no passing evidence becomes
-   `unknown`.
+   case-insensitive substring of the title or URL as sent after normalizing
+   curly quotes to straight quotes and encoded, full-width, and small
+   ampersands to `&`, and sets its certainty to `probable`. `not_supported`
+   with no passing evidence becomes `unknown`.
 3. **Post processing.** `drop_reason` gives `wrong_institution` (`institution`
    is `not_supported`), `wrong_page_type` (`page_type` is `other`) or
    `wrong_institution_and_wrong_page_type`, written as `decision=discard_<reason>`.
