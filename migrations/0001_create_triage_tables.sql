@@ -1,4 +1,4 @@
--- Stage 2b tables. Spec: specs/backlog/llm_triage_cache.md.
+-- Stage 2b tables. Described in docs/stages/stage2_filter_candidates.md.
 -- No BEGIN/COMMIT and no PRAGMA user_version here: triage_store.migrate wraps
 -- the file in one transaction together with the version bump.
 

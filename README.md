@@ -24,6 +24,12 @@ python render_candidates.py
 python extract_contact_info.py
 ```
 
+Stage 2b saves every Gemini reply and each run's results in
+`data/database.sqlite`, so a rerun reuses the replies for free. List and compare
+runs with `python compare_triage_runs.py --list` (usage is in the script's
+docstring; details in
+[`docs/stages/stage2_filter_candidates.md`](docs/stages/stage2_filter_candidates.md)).
+
 Every stage after Stage 0 takes `--input` and `--output`. Stage 1 reads a small
 positive-control set by default. A full run is
 `python fetch_candidates.py --input data/institutions.csv --yes`; it spends

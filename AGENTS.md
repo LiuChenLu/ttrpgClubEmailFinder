@@ -47,7 +47,9 @@ python fetch_candidates.py --limit 3     # a sample Stage 1 run
 Stage 2b calls Gemini, which spends quota. `tests/test_llm_triage_gemini_live_network.py`
 is skipped unless `RUN_GEMINI_LIVE_TESTS=1`; **never set it, or run
 `llm_triage.py` on a real input, without the user's approval.** Use a small
-`--input`/`--output` sample.
+`--input`/`--output` sample. `--cache-only` and `compare_triage_runs.py` never
+call Gemini. `data/database.sqlite` holds saved replies that cost quota to
+recreate: never delete it or the `llm_triage_response` table.
 
 Stage 1 and Stage 3 spend Tavily credits. Stage 1 refuses a run estimated above
 `MAX_UNCONFIRMED_SEARCH_CREDITS` unless given `--yes`; **never pass `--yes`, or

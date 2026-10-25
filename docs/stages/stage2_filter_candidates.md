@@ -3,7 +3,9 @@
 **Input:** `data/search_results.csv` (Stage 1)
 
 **Output:** `data/filtered_candidates.csv` (2a), then
-`data/llm_filtered_candidates.csv` (2b). Stage 3 still reads the 2a file.
+`data/llm_filtered_candidates.csv` (2b). Stage 3 still reads the 2a file. 2b also
+saves its model replies and every run's results in `data/database.sqlite`; see
+[Saved model replies](#saved-model-replies).
 
 `filter_candidates.py` is a thin entry point. Its `main()` runs two steps in
 order:
@@ -310,7 +312,13 @@ is `NULL`.
 - `TRIAGE_MODEL`, `TRIAGE_THINKING_LEVEL`, the prompt (`v0`) and the five
   few-shot examples are a first guess and haven't been evaluated. No eval
   exists.
-- Stage 3 doesn't read the 2b file yet.
+- Stage 3 doesn't read the 2b file yet. The 2b CSV is still written, and is
+  meant to be removed once the database is the output.
+- Nothing prunes old runs: each run adds one `llm_triage_result` row per input
+  row. Delete a run by `run_id` from `llm_triage_result`, then `llm_triage_run`.
+  Never delete from `llm_triage_response`; those replies cost API calls.
+- `compare_triage_runs.py` skips the evidence quotes, and matches rows by
+  `unitid` and `result_url` only.
 - Each call prints an "automatic function calling" warning from `google-genai`.
 - `is_on_domain` takes the last two labels as the registrable domain, which is
   right for `.edu` only. Schools in one system (CUNY, KCTCS, PSU) share a

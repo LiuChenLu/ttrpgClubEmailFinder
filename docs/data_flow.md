@@ -58,7 +58,9 @@ ones below. `decision` keeps its position and is rewritten only for rows 2b
 drops. Stage 3 does not read this file yet.
 
 Rows 2a discarded, and sentinels, get every column below blank. The label
-fields are in the order the model returns them, evidence first.
+fields are in the order the model returns them, evidence first. The same labels
+are also saved per run in the SQLite database, which is not a CSV: see
+[stage 2](stages/stage2_filter_candidates.md#database-columns).
 
 - `title_evidence_for_page_type`: quote from the title behind `page_type`
 - `url_evidence_for_page_type`: quote from the URL behind `page_type`

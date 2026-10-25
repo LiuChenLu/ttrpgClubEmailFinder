@@ -1,5 +1,5 @@
 -- One row per Stage 2b run, so runs with different models, prompts or label
--- rules can be compared. Spec: specs/backlog/llm_triage_cache.md.
+-- rules can be compared. Described in docs/stages/stage2_filter_candidates.md.
 -- Saved model replies (llm_triage_response) stay shared by every run: a run's
 -- results point at them, so a later run with the same model input costs no call.
 

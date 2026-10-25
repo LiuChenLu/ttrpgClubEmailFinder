@@ -6,7 +6,7 @@ The schema lives in `config.MIGRATIONS_DIR`, one `NNNN_name.sql` file per change
 `PRAGMA user_version`: the number of the last migration applied. Add a new file
 and never edit one that has shipped. Saved model replies
 (`llm_triage_response`) cost money to recreate, so no migration may drop or
-rewrite that table. Spec: specs/backlog/llm_triage_cache.md.
+rewrite that table. Described in docs/stages/stage2_filter_candidates.md.
 
 Importing this module reads no files and opens no database.
 """
