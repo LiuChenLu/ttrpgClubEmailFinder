@@ -104,7 +104,9 @@ and `config/llm_triage_examples.jsonl` as the system prompt and the row as the
 message. The reply schema is built from `schema.py`. The client reads
 `GEMINI_API_KEY` from `.env` on first use, and retries 429 and 5xx up to
 `TRIAGE_API_ATTEMPTS` with backoff. A reply that isn't a JSON object comes back
-as `{}`, so it is retried as invalid output. Columns and decision values: [`data_flow.md`](../data_flow.md).
+as `{}`, so it is retried as invalid output. `label_result` is `build_request`
+(a plain dict of everything the model sees) then `send_request`, the only code
+that calls Gemini. Columns and decision values: [`data_flow.md`](../data_flow.md).
 
 1. **Preprocessing.** Only rows where `schema.is_keep(row)` is true and that
    aren't sentinels are sent. `build_triage_input` sends the official name,

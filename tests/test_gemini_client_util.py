@@ -89,6 +89,44 @@ def test_label_result_sends_the_row_last_and_returns_the_parsed_reply():
     assert request.thinking_config.thinking_level.name == config.TRIAGE_THINKING_LEVEL
 
 
+def test_build_request_holds_everything_the_model_sees_as_plain_json():
+    request = gemini_client_util.build_request(TRIAGE_INPUT)
+
+    assert request == {
+        "model": config.TRIAGE_MODEL,
+        "system_instruction": gemini_client_util.system_prompt(),
+        "response_json_schema": gemini_client_util.response_schema(),
+        "temperature": config.TRIAGE_TEMPERATURE,
+        "thinking_level": config.TRIAGE_THINKING_LEVEL,
+        "contents": json.dumps(TRIAGE_INPUT, ensure_ascii=False),
+    }
+    assert json.loads(json.dumps(request)) == request
+
+
+def test_build_request_is_stable_and_changes_with_the_input():
+    first = gemini_client_util.build_request(TRIAGE_INPUT)
+
+    assert gemini_client_util.build_request(dict(TRIAGE_INPUT)) == first
+    assert gemini_client_util.build_request({**TRIAGE_INPUT, "title": "Other"}) != first
+
+
+def test_send_request_sends_only_what_the_dict_holds():
+    client = FakeClient(text="{}")
+    request = {
+        **gemini_client_util.build_request(TRIAGE_INPUT),
+        "model": "some-other-model",
+        "temperature": 0.5,
+        "thinking_level": "HIGH",
+    }
+
+    gemini_client_util.send_request(request, client)
+
+    (call,) = client.models.calls
+    assert call["model"] == "some-other-model"
+    assert call["config"].temperature == 0.5
+    assert call["config"].thinking_config.thinking_level.name == "HIGH"
+
+
 @pytest.mark.parametrize("text", [None, "", "not json", "[1, 2]", '"a string"'])
 def test_a_reply_that_is_not_a_json_object_comes_back_empty_to_be_retried(text):
     assert gemini_client_util.label_result(TRIAGE_INPUT, FakeClient(text=text)) == {}

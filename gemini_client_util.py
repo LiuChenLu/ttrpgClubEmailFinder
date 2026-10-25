@@ -90,33 +90,64 @@ def system_prompt() -> str:
     return f"{rubric}\n\n## Examples\n\n{shown}"
 
 
+def build_request(triage_input: dict) -> dict:
+    """Everything the model sees, as plain JSON values.
+
+    `send_request` reads nothing but this dict, so a hash of it covers the whole
+    call: a new setting can only reach the model by being added here. Plain
+    values, not SDK types, so an SDK upgrade can't change the hash.
+    """
+    return {
+        "model": TRIAGE_MODEL,
+        "system_instruction": system_prompt(),
+        "response_json_schema": response_schema(),
+        "temperature": TRIAGE_TEMPERATURE,
+        "thinking_level": TRIAGE_THINKING_LEVEL,
+        "contents": json.dumps(triage_input, ensure_ascii=False),
+    }
+
+
+def send_request(request: dict, client: genai.Client | None = None):
+    """Call Gemini with a `build_request` dict and return the SDK response.
+
+    Raises on an API failure that the client's own retries (429 and 5xx)
+    didn't clear. `client` is for tests; it defaults to the shared `gemini()`.
+    """
+    client = client or gemini()
+    return client.models.generate_content(
+        model=request["model"],
+        contents=request["contents"],
+        config=types.GenerateContentConfig(
+            system_instruction=request["system_instruction"],
+            temperature=request["temperature"],
+            thinking_config=types.ThinkingConfig(
+                thinking_level=types.ThinkingLevel[request["thinking_level"]]
+            ),
+            response_mime_type="application/json",
+            response_json_schema=request["response_json_schema"],
+        ),
+    )
+
+
+def parse_reply(text: str | None) -> dict:
+    """The reply text as a dict. Anything that isn't a JSON object (blocked,
+    empty, cut off) is {} so llm_triage retries it as invalid output.
+    """
+    try:
+        parsed = json.loads(text)
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def label_result(triage_input: dict, client: genai.Client | None = None) -> dict:
     """Label one search result.
 
     `triage_input` is built by llm_triage.build_triage_input. Returns the
     parsed reply, one str per field in TRIAGE_LABEL_FIELDNAMES when the model
-    behaves. A reply that isn't a JSON object (blocked, empty, cut off) comes
-    back as {} so llm_triage retries it as invalid output. Raises on an API
-    failure that the client's own retries (429 and 5xx) didn't clear.
+    behaves, or {} (see `parse_reply`). Raises on an API failure.
 
     `client` is for tests; it defaults to the shared `gemini()` client.
     """
-    client = client or gemini()
-    response = client.models.generate_content(
-        model=TRIAGE_MODEL,
-        contents=json.dumps(triage_input, ensure_ascii=False),
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt(),
-            temperature=TRIAGE_TEMPERATURE,
-            thinking_config=types.ThinkingConfig(
-                thinking_level=types.ThinkingLevel[TRIAGE_THINKING_LEVEL]
-            ),
-            response_mime_type="application/json",
-            response_json_schema=response_schema(),
-        ),
-    )
-    try:
-        parsed = json.loads(response.text)
-    except (TypeError, ValueError):
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+    response = send_request(build_request(triage_input), client)
+    return parse_reply(response.text)
