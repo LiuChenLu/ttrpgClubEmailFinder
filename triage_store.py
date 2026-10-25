@@ -1,5 +1,5 @@
 """The SQLite database behind Stage 2b: opening it, keeping its schema current,
-and saving and finding the model's replies.
+and saving the model's replies and each run's results.
 
 The schema lives in `config.MIGRATIONS_DIR`, one `NNNN_name.sql` file per change
 (numbered from 0001 with no gaps). The file's version is SQLite's
@@ -18,9 +18,15 @@ import json
 import os
 import re
 import sqlite3
+from collections import Counter
 
 from config import DATABASE_PATH, MIGRATIONS_DIR
-from schema import TRIAGE_USAGE_FIELDNAMES
+from schema import (
+    TRIAGE_RESULT_FIELDNAMES,
+    TRIAGE_RESULT_ROW_FIELDNAMES,
+    TRIAGE_RUN_FIELDNAMES,
+    TRIAGE_USAGE_FIELDNAMES,
+)
 
 _MIGRATION_NAME = re.compile(r"(\d{4})_[A-Za-z0-9_]+\.sql")
 
@@ -145,6 +151,87 @@ def prompt_hash(request: dict) -> str:
     )
 
 
+def _save_prompt(conn: sqlite3.Connection, request: dict) -> str:
+    """Save the prompt version once and return its hash. Doesn't commit."""
+    key = prompt_hash(request)
+    conn.execute(
+        "INSERT OR IGNORE INTO llm_triage_prompt"
+        " (prompt_hash, system_prompt, response_schema) VALUES (?, ?, ?)",
+        (
+            key,
+            request["system_instruction"],
+            _canonical_json(request["response_json_schema"]),
+        ),
+    )
+    return key
+
+
+def save_run(
+    conn: sqlite3.Connection,
+    request: dict,
+    results: list[dict],
+    *,
+    started_at: str,
+    prompt_version: str,
+    input_csv: str,
+    cache_only: bool,
+    git_commit: str | None,
+    git_dirty: bool | None,
+    note: str | None,
+) -> int:
+    """Record one Stage 2b run and its `llm_triage_result` rows; return `run_id`.
+
+    Rows are only ever inserted, so earlier runs are never touched: that is what
+    makes two runs comparable. Everything is written in one transaction, so a
+    run exists only if it finished and has all its rows. `request` is any
+    `build_request` dict from the run (model, prompt, temperature and thinking
+    level are the same for every row). Each of `results` holds every column in
+    `schema.TRIAGE_RESULT_ROW_FIELDNAMES`. `run_id` is never part of a reply's
+    cache key, so a new run can still reuse every saved reply.
+
+    Raises ValueError, before writing anything, if two results share
+    (`unitid`, `result_url`).
+    """
+    keys = Counter((r["unitid"], r["result_url"]) for r in results)
+    duplicate = next((key for key, count in keys.items() if count > 1), None)
+    if duplicate is not None:
+        raise ValueError(
+            f"two results for unitid={duplicate[0]!r}, result_url={duplicate[1]!r}"
+        )
+
+    run_values = {
+        "started_at": started_at,
+        "model": request["model"],
+        "prompt_hash": prompt_hash(request),
+        "prompt_version": prompt_version,
+        "temperature": request["temperature"],
+        "thinking_level": request["thinking_level"],
+        "input_csv": input_csv,
+        "cache_only": int(cache_only),
+        "git_commit": git_commit,
+        "git_dirty": None if git_dirty is None else int(git_dirty),
+        "note": note,
+    }
+    run_columns = TRIAGE_RUN_FIELDNAMES[1:]
+    with conn:
+        _save_prompt(conn, request)
+        cursor = conn.execute(
+            f"INSERT INTO llm_triage_run ({', '.join(run_columns)})"
+            f" VALUES ({', '.join('?' for _ in run_columns)})",
+            [run_values[name] for name in run_columns],
+        )
+        run_id = cursor.lastrowid
+        conn.executemany(
+            f"INSERT INTO llm_triage_result ({', '.join(TRIAGE_RESULT_FIELDNAMES)})"
+            f" VALUES ({', '.join('?' for _ in TRIAGE_RESULT_FIELDNAMES)})",
+            [
+                [run_id, *(result[name] for name in TRIAGE_RESULT_ROW_FIELDNAMES)]
+                for result in results
+            ],
+        )
+    return run_id
+
+
 def get_response(conn: sqlite3.Connection, request: dict, attempt: int) -> dict | None:
     """The saved row for this request and attempt as a dict, or None."""
     cursor = conn.execute(
@@ -179,15 +266,7 @@ def put_response(
         **{name: details.get(name) for name in TRIAGE_USAGE_FIELDNAMES},
     }
     with conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO llm_triage_prompt"
-            " (prompt_hash, system_prompt, response_schema) VALUES (?, ?, ?)",
-            (
-                values["prompt_hash"],
-                request["system_instruction"],
-                _canonical_json(request["response_json_schema"]),
-            ),
-        )
+        _save_prompt(conn, request)
         conn.execute(
             f"INSERT OR IGNORE INTO llm_triage_response ({', '.join(RESPONSE_COLUMNS)})"
             f" VALUES ({', '.join('?' for _ in RESPONSE_COLUMNS)})",

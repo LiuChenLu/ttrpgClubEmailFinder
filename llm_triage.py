@@ -14,9 +14,12 @@ run_llm_triage() reads Stage 2a's CSV and writes the Stage 2b CSV.
 
 from __future__ import annotations
 
+import argparse
 import csv
+import subprocess
 from collections import Counter
 from collections.abc import Callable
+from datetime import datetime, timezone
 
 import gemini_client_util
 import triage_store
@@ -245,8 +248,9 @@ def cached_label_result(
 
 def label_with_retry(
     triage_input: dict, label_result: Callable[[dict, int], dict]
-) -> tuple[dict, str]:
-    """(checked labels, triage_status). Labels are blank when status isn't.
+) -> tuple[dict, str, int | None]:
+    """(checked labels, triage_status, attempt). Labels are blank when status
+    isn't, and `attempt` is the try whose reply gave the labels (None if none).
 
     `label_result(triage_input, attempt)` gets the attempt number (1-based) so a
     saved reply can be found for each try. An exception from the client is
@@ -258,14 +262,15 @@ def label_with_retry(
         try:
             response = label_result(triage_input, attempt)
         except triage_store.CacheMiss:
-            return blank, TRIAGE_STATUS_CACHE_MISS
+            return blank, TRIAGE_STATUS_CACHE_MISS, None
         except Exception:
-            return blank, TRIAGE_STATUS_API_ERROR
+            return blank, TRIAGE_STATUS_API_ERROR, None
         try:
-            return check_evidence(validate_response(response), triage_input), ""
+            labels = check_evidence(validate_response(response), triage_input)
+            return labels, "", attempt
         except InvalidResponse:
             continue
-    return blank, TRIAGE_STATUS_INVALID_OUTPUT
+    return blank, TRIAGE_STATUS_INVALID_OUTPUT, None
 
 
 def triage_row(
@@ -275,16 +280,17 @@ def triage_row(
     prompt_version: str = TRIAGE_PROMPT_VERSION,
 ) -> dict:
     """The Stage 2b columns for one Stage 2a row: `decision` and
-    TRIAGE_NEW_FIELDNAMES.
+    TRIAGE_NEW_FIELDNAMES, plus `attempt`, the try whose reply gave the labels
+    (None if there are no labels). `attempt` is not a CSV column.
 
     A row that isn't a candidate keeps its decision and gets every new column
     blank, model and prompt version included, since nothing labeled it.
     """
     updates = dict.fromkeys(TRIAGE_NEW_FIELDNAMES, "")
     if not is_triage_candidate(row):
-        return {**updates, "decision": row["decision"]}
+        return {**updates, "decision": row["decision"], "attempt": None}
 
-    labels, status = label_with_retry(build_triage_input(row), label_result)
+    labels, status, attempt = label_with_retry(build_triage_input(row), label_result)
     reason = None if status else drop_reason(labels)
     return {
         **updates,
@@ -293,10 +299,59 @@ def triage_row(
         "triage_status": status,
         "triage_model": model,
         "triage_prompt_version": prompt_version,
+        "attempt": attempt,
     }
 
 
+def result_row(row: dict, result: dict) -> dict:
+    """The `llm_triage_result` values for one Stage 2a row and its `triage_row`.
+
+    Rows that weren't sent to the model have a NULL `input_hash`. A row with no
+    labels (not sent, or failed) has NULL labels, so it can't be mistaken for a
+    labeled row whose evidence quotes are legitimately empty. Blank status,
+    model and prompt version are NULL too.
+    """
+    sent = is_triage_candidate(row)
+    labeled = result["page_type"] != ""
+    values = {
+        "unitid": row["unitid"],
+        "result_url": row["result_url"],
+        "stage2a_decision": row["decision"],
+        "decision": result["decision"],
+        "input_hash": None,
+        "attempt": result["attempt"],
+    }
+    if sent:
+        request = gemini_client_util.build_request(build_triage_input(row))
+        values["input_hash"] = triage_store.input_hash(request)
+    for name in TRIAGE_LABEL_FIELDNAMES:
+        values[name] = result[name] if labeled else None
+    for name in ("triage_status", "triage_model", "triage_prompt_version"):
+        values[name] = result[name] or None
+    return values
+
+
 # --- The CSV step ------------------------------------------------------------------
+
+
+def git_state(cwd: str | None = None) -> tuple[str | None, bool | None]:
+    """(HEAD commit, whether the working tree has uncommitted changes), so a run
+    records which code made it. (None, None) when this isn't a git checkout or
+    git isn't installed. Untracked files count as changes: a new file can change
+    the labels too.
+    """
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=cwd, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=cwd, capture_output=True, text=True, check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None, None
+    return head, bool(status.strip())
 
 
 def run_llm_triage(
@@ -306,7 +361,9 @@ def run_llm_triage(
     database_path: str = DATABASE_PATH,
     cache_only: bool = False,
     send_request: Callable[[dict], object] | None = None,
-) -> None:
+    note: str | None = None,
+    get_git_state: Callable[[], tuple[str | None, bool | None]] = git_state,
+) -> int | None:
     """Read Stage 2a's CSV, triage the kept rows, and write every row out.
 
     By default every reply goes through the database at `database_path`: a
@@ -315,10 +372,20 @@ def run_llm_triage(
     `send_request` replaces the Gemini call but keeps the database (for tests).
     A `label_result` replaces all of that: the database isn't opened and
     `cache_only` is ignored.
+
+    With the database, the run and one `llm_triage_result` row per input row
+    are saved together at the end, under a new `run_id` that is returned (None
+    without the database). Earlier runs are never changed, so runs with another
+    model, prompt or label rules can be compared with compare_triage_runs.py.
+    A run that crashes saves no run, but its model replies are already saved, so
+    running again costs nothing for them. `note` is free text stored with the run.
     """
+    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     decision_counts = Counter()
     status_counts = Counter()
     reply_counts = Counter()
+    results = []
+    run_id = None
 
     with open(input_csv, newline="", encoding="utf-8") as f_in:
         reader = csv.DictReader(f_in)
@@ -341,9 +408,27 @@ def run_llm_triage(
                 for row in reader:
                     result = triage_row(row, label_result)
                     writer.writerow({**row, **result})
+                    if conn is not None:
+                        results.append(result_row(row, result))
                     decision_counts[result["decision"]] += 1
                     if result["triage_status"]:
                         status_counts[result["triage_status"]] += 1
+            if conn is not None:
+                commit, dirty = get_git_state()
+                run_id = triage_store.save_run(
+                    conn,
+                    # Model, prompt and settings don't depend on the row, so any
+                    # request describes the run, even when no row was sent.
+                    gemini_client_util.build_request({}),
+                    results,
+                    started_at=started_at,
+                    prompt_version=TRIAGE_PROMPT_VERSION,
+                    input_csv=input_csv,
+                    cache_only=cache_only,
+                    git_commit=commit,
+                    git_dirty=dirty,
+                    note=note,
+                )
         finally:
             if conn is not None:
                 conn.close()
@@ -363,6 +448,20 @@ def run_llm_triage(
             f"  model replies: {reply_counts['saved']} saved, "
             f"{reply_counts['called']} new calls"
         )
+        print(f"  saved as run {run_id} (compare runs: compare_triage_runs.py)")
+    return run_id
+
+
+def add_run_arguments(parser: argparse.ArgumentParser) -> None:
+    """The Stage 2b options shared by this script and filter_candidates.py."""
+    parser.add_argument(
+        "--cache-only", action="store_true",
+        help="use saved model replies only; never call Gemini",
+    )
+    parser.add_argument(
+        "--note", default=None,
+        help="free text saved with the run, e.g. what you changed",
+    )
 
 
 if __name__ == "__main__":
@@ -371,9 +470,8 @@ if __name__ == "__main__":
         DEFAULT_FILTERED_CSV,
         DEFAULT_LLM_FILTERED_CSV,
     )
-    parser.add_argument(
-        "--cache-only", action="store_true",
-        help="use saved model replies only; never call Gemini",
-    )
+    add_run_arguments(parser)
     args = parser.parse_args()
-    run_llm_triage(args.input_csv, args.output_csv, cache_only=args.cache_only)
+    run_llm_triage(
+        args.input_csv, args.output_csv, cache_only=args.cache_only, note=args.note
+    )

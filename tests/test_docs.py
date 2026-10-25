@@ -86,8 +86,10 @@ def test_stage2_doc_describes_every_database_column():
     conn = triage_store.connect(":memory:")
     actual = {
         table: [row[1] for row in conn.execute(f"PRAGMA table_info({table})")]
+        # sqlite_sequence is SQLite's own bookkeeping for AUTOINCREMENT.
         for (table,) in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
+            "SELECT name FROM sqlite_master"
+            " WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
         ).fetchall()
     }
 

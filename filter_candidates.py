@@ -13,9 +13,12 @@ def main(
     output_csv: str = DEFAULT_FILTERED_CSV,
     llm_output_csv: str = DEFAULT_LLM_FILTERED_CSV,
     cache_only: bool = False,
+    note: str | None = None,
 ) -> None:
     rule_based_filtering.run_rule_based_filter(input_csv, output_csv)
-    llm_triage.run_llm_triage(output_csv, llm_output_csv, cache_only=cache_only)
+    llm_triage.run_llm_triage(
+        output_csv, llm_output_csv, cache_only=cache_only, note=note
+    )
 
 
 if __name__ == "__main__":
@@ -28,9 +31,9 @@ if __name__ == "__main__":
         "--llm-output", dest="llm_output_csv", default=DEFAULT_LLM_FILTERED_CSV,
         help=f"Stage 2b output CSV (default: {DEFAULT_LLM_FILTERED_CSV})",
     )
-    parser.add_argument(
-        "--cache-only", action="store_true",
-        help="2b uses saved model replies only; never call Gemini",
-    )
+    llm_triage.add_run_arguments(parser)
     args = parser.parse_args()
-    main(args.input_csv, args.output_csv, args.llm_output_csv, args.cache_only)
+    main(
+        args.input_csv, args.output_csv, args.llm_output_csv,
+        args.cache_only, args.note,
+    )

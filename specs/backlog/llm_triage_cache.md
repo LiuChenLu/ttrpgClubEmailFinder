@@ -31,7 +31,11 @@ row per prompt version), `llm_triage_response` (the cache, keyed on
    **Done.**
 3. `label_with_retry` reads the store first; `--cache-only`. **Done.** Docs for
    it are in `stage2_filter_candidates.md` ("Saved model replies").
-4. Write `llm_triage_result`; edit `schema.py` and `data_flow.md` together.
+4. Write `llm_triage_result` (`schema.TRIAGE_RESULT_FIELDNAMES`). **Done.**
+   `data_flow.md` is CSV-only, so the table is documented in the stage 2 doc.
+4b. Runs: `migrations/0002_add_triage_runs.sql` adds `llm_triage_run`, and
+   `llm_triage_result` is keyed on `run_id` and only inserted. `--note`, git
+   commit and dirty flag per run, and `compare_triage_runs.py`. **Done.**
 5. Tests (fake client, in-memory db: 2nd run makes zero calls) and docs.
 
 ## Decided
@@ -39,3 +43,5 @@ row per prompt version), `llm_triage_response` (the cache, keyed on
   the same model input must share one saved reply, so `unitid` is not in the key.
 - `triage_model` is kept in `llm_triage_result` as well as in the response table.
 - The 2b CSV is removed later, not in this change.
+- Results are never replaced: every run adds rows under a new `run_id`, so models,
+  prompts and label rules can be compared. `run_id` is not in the cache key.

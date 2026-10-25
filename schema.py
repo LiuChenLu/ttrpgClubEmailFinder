@@ -124,6 +124,32 @@ TRIAGE_NEW_FIELDNAMES = [
 ]
 LLM_FILTERED_FIELDNAMES = [*FILTERED_FIELDNAMES, *TRIAGE_NEW_FIELDNAMES]
 
+# The database tables of Stage 2b are not CSV files. tests/test_triage_store.py
+# checks each list below against the table in migrations/.
+#
+# `llm_triage_run`: one row per run, saved with its results.
+TRIAGE_RUN_FIELDNAMES = [
+    "run_id", "started_at", "model", "prompt_hash", "prompt_version",
+    "temperature", "thinking_level", "input_csv", "cache_only",
+    "git_commit", "git_dirty", "note",
+]
+# `llm_triage_result`: the same labels as the 2b CSV plus the link to the saved
+# model reply. The row fields are everything but `run_id`, which is only known
+# once the run is saved.
+TRIAGE_RESULT_ROW_FIELDNAMES = [
+    "unitid", "result_url", "stage2a_decision", "decision",
+    "input_hash", "attempt",
+    *TRIAGE_LABEL_FIELDNAMES,
+    "triage_status", "triage_model", "triage_prompt_version",
+]
+TRIAGE_RESULT_FIELDNAMES = ["run_id", *TRIAGE_RESULT_ROW_FIELDNAMES]
+# What compare_triage_runs.py compares. The evidence quotes are left out: a
+# reworded quote is rarely a change worth reading.
+TRIAGE_COMPARE_FIELDNAMES = [
+    "decision", "page_type", "page_type_certainty",
+    "institution", "institution_certainty", "triage_status",
+]
+
 PAGE_TYPE_OTHER = "other"
 INSTITUTION_NOT_SUPPORTED = "not_supported"
 INSTITUTION_UNKNOWN = "unknown"

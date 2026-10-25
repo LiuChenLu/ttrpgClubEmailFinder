@@ -651,3 +651,316 @@ def test_run_llm_triage_prints_how_many_replies_were_saved_and_called(tmp_path, 
     run_triage(tmp_path, rows, FakeModel(), name="b.csv")
 
     assert "model replies: 1 saved, 0 new calls" in capsys.readouterr().out
+
+
+# --- runs and the llm_triage_result table -------------------------------------------------
+
+NO_GIT = lambda: (None, None)  # noqa: E731 - keeps the tests off the real repo
+
+
+def run_saved(tmp_path, rows, send_request, name="out.csv", **kwargs):
+    """Run Stage 2b on `rows` against the tmp database and return its run_id."""
+    input_csv = tmp_path / "filtered.csv"
+    write_filtered_csv(input_csv, rows)
+    return llm_triage.run_llm_triage(
+        str(input_csv),
+        str(tmp_path / name),
+        database_path=str(tmp_path / "database.sqlite"),
+        send_request=send_request,
+        get_git_state=kwargs.pop("get_git_state", NO_GIT),
+        **kwargs,
+    )
+
+
+def read_results(tmp_path, run_id):
+    conn = triage_store.connect(str(tmp_path / "database.sqlite"))
+    cursor = conn.execute(
+        "SELECT * FROM llm_triage_result WHERE run_id = ? ORDER BY unitid", (run_id,)
+    )
+    names = [c[0] for c in cursor.description]
+    return {r[1]: dict(zip(names, r)) for r in cursor.fetchall()}
+
+
+def read_run(tmp_path, run_id):
+    conn = triage_store.connect(str(tmp_path / "database.sqlite"))
+    cursor = conn.execute("SELECT * FROM llm_triage_run WHERE run_id = ?", (run_id,))
+    names = [c[0] for c in cursor.description]
+    return dict(zip(names, cursor.fetchone()))
+
+
+def count(tmp_path, table):
+    conn = triage_store.connect(str(tmp_path / "database.sqlite"))
+    return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+
+
+def test_results_hold_labels_decision_and_the_link_to_the_saved_reply(tmp_path):
+    rows = [make_row(unitid="1"), make_row(unitid="2", result_title="Chess Club")]
+    model = FakeModel(
+        json.dumps(make_labels()), json.dumps(make_labels(page_type="other"))
+    )
+
+    run_id = run_saved(tmp_path, rows, model)
+    results = read_results(tmp_path, run_id)
+
+    kept, dropped = results["1"], results["2"]
+    assert (kept["stage2a_decision"], kept["decision"]) == ("keep", "keep")
+    assert dropped["stage2a_decision"] == "keep"
+    assert dropped["decision"] == "discard_wrong_page_type"
+    assert kept["page_type"] == "tabletop_club"
+    assert dropped["page_type"] == "other"
+    assert kept["triage_model"] == config.TRIAGE_MODEL
+    assert kept["triage_prompt_version"] == config.TRIAGE_PROMPT_VERSION
+    assert kept["triage_status"] is None
+    assert kept["attempt"] == 1
+    request = gemini_client_util.build_request(llm_triage.build_triage_input(rows[0]))
+    assert kept["input_hash"] == triage_store.input_hash(request)
+
+
+def test_the_run_records_its_settings_note_and_git_state(tmp_path):
+    run_id = run_saved(
+        tmp_path, [make_row()], FakeModel(), note="baseline",
+        get_git_state=lambda: ("deadbeef", True),
+    )
+
+    run = read_run(tmp_path, run_id)
+
+    assert run["model"] == config.TRIAGE_MODEL
+    assert run["prompt_version"] == config.TRIAGE_PROMPT_VERSION
+    assert run["temperature"] == config.TRIAGE_TEMPERATURE
+    assert run["thinking_level"] == config.TRIAGE_THINKING_LEVEL
+    assert run["note"] == "baseline"
+    assert (run["git_commit"], run["git_dirty"]) == ("deadbeef", 1)
+    assert run["cache_only"] == 0
+    assert run["input_csv"].endswith("filtered.csv")
+    assert run["started_at"].endswith("+00:00")
+
+
+def test_a_cache_only_run_is_marked_as_one(tmp_path):
+    run_saved(tmp_path, [make_row()], FakeModel(), name="a.csv")
+
+    run_id = run_saved(tmp_path, [make_row()], FakeModel(), name="b.csv", cache_only=True)
+
+    assert read_run(tmp_path, run_id)["cache_only"] == 1
+
+
+def test_every_result_input_hash_has_a_saved_reply(tmp_path):
+    rows = [make_row(unitid="1"), make_row(unitid="2", result_title="X")]
+    run_saved(tmp_path, rows, FakeModel())
+    conn = triage_store.connect(str(tmp_path / "database.sqlite"))
+
+    orphans = conn.execute(
+        "SELECT COUNT(*) FROM llm_triage_result r LEFT JOIN llm_triage_response p"
+        " ON p.input_hash = r.input_hash AND p.attempt = r.attempt"
+        " WHERE r.input_hash IS NOT NULL AND p.input_hash IS NULL"
+    ).fetchone()
+
+    assert orphans == (0,)
+
+
+def test_two_unitids_with_the_same_input_have_separate_results_and_one_reply(tmp_path):
+    run_id = run_saved(
+        tmp_path, [make_row(unitid="100"), make_row(unitid="200")], FakeModel()
+    )
+    results = read_results(tmp_path, run_id)
+
+    assert set(results) == {"100", "200"}
+    assert results["100"]["input_hash"] == results["200"]["input_hash"]
+    assert count(tmp_path, "llm_triage_response") == 1
+
+
+def test_rows_not_sent_to_the_model_have_null_hash_labels_and_model(tmp_path):
+    rows = [
+        make_row(unitid="1", decision="discard_pdf"),
+        make_row(unitid="2", result_url="ERROR", decision="discard_sentinel_row"),
+    ]
+    model = FakeModel()
+
+    run_id = run_saved(tmp_path, rows, model)
+    results = read_results(tmp_path, run_id)
+
+    assert model.requests == []
+    for unitid, decision in (("1", "discard_pdf"), ("2", "discard_sentinel_row")):
+        row = results[unitid]
+        assert row["decision"] == row["stage2a_decision"] == decision
+        for name in (
+            "input_hash", "attempt", "triage_status", "triage_model",
+            "triage_prompt_version", *schema.TRIAGE_LABEL_FIELDNAMES,
+        ):
+            assert row[name] is None, name
+
+
+def test_a_failed_row_is_kept_with_null_labels_and_its_status(tmp_path):
+    run_id = run_saved(tmp_path, [make_row()], FakeModel(TimeoutError("boom")))
+
+    row = read_results(tmp_path, run_id)["1"]
+
+    assert row["decision"] == "keep"
+    assert row["triage_status"] == "api_error"
+    assert row["attempt"] is None
+    assert row["page_type"] is None
+    assert row["input_hash"] is not None
+    assert row["triage_model"] == config.TRIAGE_MODEL
+
+
+def test_a_labeled_row_with_empty_evidence_is_not_mistaken_for_an_unlabeled_one(tmp_path):
+    labels = make_labels(
+        title_evidence_for_page_type="", url_evidence_for_page_type="",
+        page_type="unknown",
+    )
+
+    run_id = run_saved(tmp_path, [make_row()], FakeModel(json.dumps(labels)))
+
+    row = read_results(tmp_path, run_id)["1"]
+    assert row["page_type"] == "unknown"
+    assert row["title_evidence_for_page_type"] == ""
+
+
+def test_a_cache_miss_row_is_recorded_without_labels(tmp_path):
+    run_id = run_saved(tmp_path, [make_row()], FakeModel(), cache_only=True)
+
+    row = read_results(tmp_path, run_id)["1"]
+
+    assert row["triage_status"] == "cache_miss"
+    assert row["decision"] == "keep"
+    assert row["page_type"] is None
+
+
+def test_the_attempt_that_gave_the_labels_is_recorded_after_a_retry(tmp_path):
+    model = FakeModel('{"page_type": "other"}', json.dumps(make_labels()))
+
+    run_id = run_saved(tmp_path, [make_row()], model)
+
+    assert read_results(tmp_path, run_id)["1"]["attempt"] == 2
+
+
+def test_rerunning_the_same_rows_adds_a_run_and_replaces_nothing(tmp_path):
+    rows = [make_row(unitid="1"), make_row(unitid="2", result_title="X")]
+
+    first = run_saved(tmp_path, rows, FakeModel(), name="a.csv")
+    second = run_saved(tmp_path, rows, FakeModel(), name="b.csv")
+
+    assert second != first
+    assert count(tmp_path, "llm_triage_run") == 2
+    assert count(tmp_path, "llm_triage_result") == 4
+    assert set(read_results(tmp_path, first)) == set(read_results(tmp_path, second))
+
+
+def test_a_small_rerun_keeps_every_row_of_the_earlier_run(tmp_path):
+    full = run_saved(
+        tmp_path,
+        [make_row(unitid="1"), make_row(unitid="2", result_title="X")],
+        FakeModel(), name="a.csv",
+    )
+
+    small = run_saved(tmp_path, [make_row(unitid="1")], FakeModel(), name="b.csv")
+
+    assert set(read_results(tmp_path, full)) == {"1", "2"}
+    assert set(read_results(tmp_path, small)) == {"1"}
+
+
+def test_a_new_run_with_new_label_rules_costs_no_call_and_keeps_the_old_decisions(
+    tmp_path, monkeypatch
+):
+    rows = [make_row()]
+    first = run_saved(
+        tmp_path, rows, FakeModel(json.dumps(make_labels(page_type="other"))),
+        name="a.csv",
+    )
+    monkeypatch.setattr(llm_triage, "drop_reason", lambda labels: None)
+    model = FakeModel()
+
+    second = run_saved(tmp_path, rows, model, name="b.csv", cache_only=True)
+
+    assert model.requests == []
+    assert read_results(tmp_path, first)["1"]["decision"] == "discard_wrong_page_type"
+    assert read_results(tmp_path, second)["1"]["decision"] == "keep"
+    assert read_results(tmp_path, second)["1"]["page_type"] == "other"
+
+
+def test_a_new_run_finds_the_saved_replies_of_an_earlier_run(tmp_path):
+    rows = [make_row(unitid="1"), make_row(unitid="2", result_title="X")]
+    first_model = FakeModel()
+    run_saved(tmp_path, rows, first_model, name="a.csv")
+    second_model = FakeModel()
+
+    run_saved(tmp_path, rows, second_model, name="b.csv", note="same everything")
+
+    assert len(first_model.requests) == 2
+    assert second_model.requests == []
+
+
+def test_a_new_model_makes_a_new_run_with_its_own_replies_and_keeps_the_old_run(
+    tmp_path, monkeypatch
+):
+    rows = [make_row()]
+    first = run_saved(tmp_path, rows, FakeModel(), name="a.csv")
+    monkeypatch.setattr(gemini_client_util, "TRIAGE_MODEL", "another-model")
+    other = FakeModel(json.dumps(make_labels(page_type="other")))
+
+    second = run_saved(tmp_path, rows, other, name="b.csv")
+
+    assert len(other.requests) == 1
+    assert read_run(tmp_path, first)["model"] == config.TRIAGE_MODEL
+    assert read_run(tmp_path, second)["model"] == "another-model"
+    assert read_results(tmp_path, first)["1"]["page_type"] == "tabletop_club"
+    assert read_results(tmp_path, second)["1"]["page_type"] == "other"
+    assert count(tmp_path, "llm_triage_response") == 2
+
+
+def test_a_run_that_crashes_saves_no_run_but_keeps_its_replies(tmp_path, monkeypatch):
+    rows = [make_row()]
+    monkeypatch.setattr(
+        llm_triage, "result_row", lambda row, result: (_ for _ in ()).throw(OSError())
+    )
+
+    with pytest.raises(OSError):
+        run_saved(tmp_path, rows, FakeModel(), name="a.csv")
+
+    assert count(tmp_path, "llm_triage_run") == 0
+    assert count(tmp_path, "llm_triage_result") == 0
+    assert count(tmp_path, "llm_triage_response") == 1
+
+
+def test_the_summary_prints_the_run_id(tmp_path, capsys):
+    run_id = run_saved(tmp_path, [make_row()], FakeModel())
+
+    assert f"saved as run {run_id}" in capsys.readouterr().out
+
+
+def test_run_llm_triage_with_a_label_result_saves_no_run_and_no_database(tmp_path):
+    input_csv = tmp_path / "filtered.csv"
+    write_filtered_csv(input_csv, [make_row()])
+    database = tmp_path / "database.sqlite"
+
+    run_id = llm_triage.run_llm_triage(
+        str(input_csv), str(tmp_path / "out.csv"), fixed_labels(),
+        database_path=str(database),
+    )
+
+    assert run_id is None
+    assert not database.exists()
+
+
+def test_git_state_reports_the_commit_and_uncommitted_changes(tmp_path):
+    import subprocess
+
+    def git(*args):
+        subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+            cwd=tmp_path, check=True, capture_output=True,
+        )
+
+    git("init")
+    (tmp_path / "a.txt").write_text("one")
+    git("add", "a.txt")
+    git("commit", "-m", "first")
+    clean = llm_triage.git_state(str(tmp_path))
+    (tmp_path / "b.txt").write_text("untracked")
+    dirty = llm_triage.git_state(str(tmp_path))
+
+    assert len(clean[0]) == 40 and clean[1] is False
+    assert dirty == (clean[0], True)
+
+
+def test_git_state_is_none_outside_a_git_checkout(tmp_path):
+    assert llm_triage.git_state(str(tmp_path)) == (None, None)

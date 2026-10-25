@@ -157,15 +157,28 @@ schema. The CSV is still written.
 - **Invalid replies** are saved, one row per attempt, so a rerun replays the bad
   answer and the retry for free. **API errors are never saved**, so the next run
   tries again. A saved row is never overwritten.
-- **`--cache-only`** (on `llm_triage.py` and `filter_candidates.py`) never calls
-  Gemini. A row with no saved reply is kept with blank labels and
-  `triage_status=cache_miss`.
+- **`--cache-only`** never calls Gemini. A row with no saved reply is kept with
+  blank labels and `triage_status=cache_miss`. It and `--note "text"` (saved
+  with the run) are options of both `llm_triage.py` and `filter_candidates.py`.
 - The run prints how many replies were saved and how many were new calls.
-- `llm_triage_result` exists in the schema but nothing writes it yet.
+- **Runs.** Each run is saved as a numbered row in `llm_triage_run` (model,
+  prompt, settings, git commit, your `--note`) with one `llm_triage_result` row
+  per Stage 2a row. Nothing is replaced, so runs with another model, prompt or
+  label rules stay side by side. Compare two with
+  `python compare_triage_runs.py --a 1 --b 2` (`--list` shows the ids; usage is
+  in the script's docstring). The run is saved after the last row, in one
+  transaction; if the run crashes there is no run, but its model replies are
+  already saved, so running again costs nothing for them. The run id is not part
+  of a reply's key, so every new run finds the earlier runs' saved replies.
+- **Comparing label rules costs nothing.** Edit `drop_reason` or
+  `check_evidence`, run `python llm_triage.py --cache-only --note "..."`, then
+  compare it with the earlier run. A new model or prompt calls Gemini once per
+  distinct input that has no saved reply.
 
 ### Database columns
 
-The schema is `migrations/0001_create_triage_tables.sql`.
+The schema is the `migrations/*.sql` files (`0001` created the tables, `0002`
+added `llm_triage_run` and gave `llm_triage_result` its `run_id`).
 `tests/test_docs.py` fails if a column is missing from, or extra in, the lists
 below. A blank value is stored as `NULL`.
 
@@ -228,6 +241,68 @@ The six token columns use the SDK's `usage_metadata` names
 (`schema.TRIAGE_USAGE_FIELDNAMES`); the SDK leaves a count out when it doesn't
 apply.
 
+#### `llm_triage_run`
+
+One row per Stage 2b run that used the database. It is written together with the
+run's `llm_triage_result` rows, so a run that crashed has neither. Earlier runs
+are never changed.
+
+- `run_id`: primary key, counting up from 1. Never reused, even after a run is
+  deleted.
+- `started_at`: when the run began (UTC, ISO 8601).
+- `model`: model name sent.
+- `prompt_hash`: foreign key to `llm_triage_prompt`: the prompt and schema sent.
+- `prompt_version`: `config.TRIAGE_PROMPT_VERSION` at the time. A label you set by
+  hand; `prompt_hash` is the exact record.
+- `temperature`: temperature sent.
+- `thinking_level`: `ThinkingLevel` name sent.
+- `input_csv`: the Stage 2a file the run read, as given.
+- `cache_only`: 1 if the run was `--cache-only`, else 0.
+- `git_commit`: `HEAD` when the run started. `NULL` outside a git checkout.
+- `git_dirty`: 1 if the working tree had uncommitted or untracked changes, so the
+  commit alone doesn't pin the code that made the labels. `NULL` outside git.
+- `note`: the text given to `--note`, or `NULL`.
+
+#### `llm_triage_result`
+
+Derived from the replies. One row per Stage 2a row per run, and rows are only
+ever inserted, so two runs can be compared row by row. Primary key: (`run_id`,
+`unitid`, `result_url`). Several `unitid`s can point at the same saved reply.
+Unlike the CSV, where "no value" is an empty string, a column with no value here
+is `NULL`.
+
+- `run_id`: foreign key to `llm_triage_run`: the run that wrote the row.
+- `unitid`: IPEDS unit ID of the Stage 2a row.
+- `result_url`: result URL of the Stage 2a row.
+- `stage2a_decision`: `decision` as Stage 2a wrote it.
+- `decision`: `decision` after 2b, `keep` or `discard_` plus a reason. Same
+  values as the CSV column.
+- `input_hash`: the key of the request for this row, which joins to
+  `llm_triage_response`. `NULL` if the row was never sent to the model (a 2a
+  discard or a sentinel). It is set, with no matching reply, for a row that
+  failed with `api_error` or `cache_miss`.
+- `attempt`: the attempt whose reply gave the labels. `NULL` if there are no
+  labels.
+- The next eight columns (the labels) are the same as the CSV columns of those
+  names, after `check_evidence`. They are all `NULL` when the row has no labels
+  (never sent, or failed), so a labeled row whose evidence quotes are empty
+  strings can't be mistaken for an unlabeled one. See
+  [`data_flow.md`](../data_flow.md).
+- `title_evidence_for_page_type`
+- `url_evidence_for_page_type`
+- `page_type`
+- `page_type_certainty`
+- `title_evidence_for_institution`
+- `url_evidence_for_institution`
+- `institution`
+- `institution_certainty`
+- `triage_status`: `NULL` on success, else `api_error`, `invalid_output` or
+  `cache_miss`.
+- `triage_model`: the model the row was sent to, kept so a different model's
+  labels can be told apart. `NULL` if never sent.
+- `triage_prompt_version`: `config.TRIAGE_PROMPT_VERSION` when the row was sent.
+  `NULL` if never sent.
+
 ## Open gaps
 
 - Deduplicate URLs across institutions to catch duplicate clubs from colleges
@@ -240,33 +315,3 @@ apply.
 - `is_on_domain` takes the last two labels as the registrable domain, which is
   right for `.edu` only. Schools in one system (CUNY, KCTCS, PSU) share a
   domain, so their pages count as `on_domain` for each other (accepted).
-
-#### `llm_triage_result`
-
-Derived from the replies, so it can be dropped and rebuilt freely. **Nothing
-writes it yet.** Primary key: (`unitid`, `result_url`). Several `unitid`s can
-point at the same saved reply.
-
-- `unitid`: IPEDS unit ID of the Stage 2a row.
-- `result_url`: result URL of the Stage 2a row.
-- `stage2a_decision`: `decision` as Stage 2a wrote it.
-- `decision`: `decision` after 2b, `keep` or `discard_` plus a reason. Same
-  values as the CSV column.
-- `input_hash`: which saved reply produced the labels. Blank if the row was
-  never sent to the model.
-- `attempt`: which attempt of that reply was used. Blank if never sent.
-- The next eight columns (the labels) are the same as the CSV columns of those
-  names, after `check_evidence`. See [`data_flow.md`](../data_flow.md).
-- `title_evidence_for_page_type`
-- `url_evidence_for_page_type`
-- `page_type`
-- `page_type_certainty`
-- `title_evidence_for_institution`
-- `url_evidence_for_institution`
-- `institution`
-- `institution_certainty`
-- `triage_status`: blank, `api_error`, `invalid_output` or `cache_miss`.
-- `triage_model`: the model that labeled the row, kept so a different model's
-  labels can be told apart.
-- `triage_prompt_version`: `config.TRIAGE_PROMPT_VERSION` when the row was
-  labeled.
