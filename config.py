@@ -21,6 +21,11 @@ DEFAULT_FILTERED_CSV = "./data/filtered_candidates.csv"
 # Output of stage 2b. Stage 3 still reads DEFAULT_FILTERED_CSV; switch it to
 # this file once the triage prompt has been evaluated.
 DEFAULT_LLM_FILTERED_CSV = "./data/llm_filtered_candidates.csv"
+# SQLite file for Stage 2b's saved model replies and results. Other stages'
+# output may move in later.
+DATABASE_PATH = "./data/database.sqlite"
+# One NNNN_name.sql file per schema change, applied in name order.
+MIGRATIONS_DIR = "./migrations"
 # Output of stage 3
 RENDERED_RESULTS_CSV = "./data/rendered_results.csv"
 # Output of stage 4

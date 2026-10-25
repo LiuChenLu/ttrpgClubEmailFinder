@@ -40,6 +40,7 @@ checkpoint/resume.
 | The `--input` / `--output` options                | `stage_cli.py`                                                       |
 | Tavily client, `.env` loading                     | `tavily_client_util.py`                                              |
 | The Stage 2b LLM call, prompt and examples        | `gemini_client_util.py`, `config/triage_prompt.md`, `config/llm_triage_examples.jsonl` |
+| The SQLite database (`config.DATABASE_PATH`) and its schema | `triage_store.py`; the schema is the numbered `migrations/*.sql` files (nothing writes to the database yet) |
 | `sanitize_for_csv`, sentinel markers, `is_sentinel` | `search_row_format_util.py`                                        |
 | URL host and registrable-domain parsing           | `url_parsing_utils.py`                                               |
 
