@@ -136,9 +136,19 @@ TRIAGE_ENUM_VALUES = {
     "institution_certainty": ("clear", CERTAINTY_PROBABLE),
 }
 
-# `triage_status` values. Blank means the row was labeled.
+# usage_metadata fields saved with each model reply in the database (not CSV
+# columns), named as the google-genai SDK names them.
+TRIAGE_USAGE_FIELDNAMES = [
+    "prompt_token_count", "candidates_token_count", "thoughts_token_count",
+    "cached_content_token_count", "tool_use_prompt_token_count",
+    "total_token_count",
+]
+
+# `triage_status` values. Blank means the row was labeled. `cache_miss` is only
+# from `--cache-only`: no saved reply, and the model was not called.
 TRIAGE_STATUS_API_ERROR = "api_error"
 TRIAGE_STATUS_INVALID_OUTPUT = "invalid_output"
+TRIAGE_STATUS_CACHE_MISS = "cache_miss"
 
 # Reasons Stage 2b adds to `decision`, in the order it reports them. Kept apart
 # from DISCARD_REASONS, which is Stage 2a's list.

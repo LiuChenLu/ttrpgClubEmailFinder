@@ -2,6 +2,7 @@
 temporary files and in-memory databases only.
 """
 
+import json
 import shutil
 import sqlite3
 from pathlib import Path
@@ -9,6 +10,8 @@ from pathlib import Path
 import pytest
 
 import config
+import gemini_client_util
+import schema
 import triage_store
 
 ROOT = Path(__file__).parent.parent
@@ -106,8 +109,6 @@ def test_response_columns_use_the_sdk_usage_metadata_names():
 
 
 def test_result_columns_hold_every_triage_label():
-    import schema
-
     conn = triage_store.connect(":memory:")
 
     assert set(schema.TRIAGE_LABEL_FIELDNAMES) <= set(
@@ -199,3 +200,125 @@ def test_files_that_are_not_sql_are_ignored(migrations_dir):
     (migrations_dir / "README.md").write_text("notes")
 
     assert len(triage_store.migration_files(str(migrations_dir))) == latest_version()
+
+
+# --- hashing and saved replies ---------------------------------------------------
+
+TRIAGE_INPUT = {
+    "university": "Example College",
+    "aliases": ["EC"],
+    "url": "https://example.edu/clubs/tabletop",
+    "title": "Tabletop Club | Example College",
+    "domain_relation": "on_domain",
+}
+DETAILS = {
+    "raw_response": '{"page_type": "other"}',
+    "finish_reason": "STOP",
+    "prompt_token_count": 120,
+    "candidates_token_count": 30,
+    "thoughts_token_count": 7,
+    "cached_content_token_count": None,
+    "tool_use_prompt_token_count": None,
+    "total_token_count": 157,
+}
+
+
+def make_request(**overrides):
+    return {**gemini_client_util.build_request(TRIAGE_INPUT), **overrides}
+
+
+def test_the_same_request_has_the_same_hash_whatever_the_key_order():
+    request = make_request()
+    reordered = dict(reversed(list(request.items())))
+
+    assert triage_store.input_hash(request) == triage_store.input_hash(reordered)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"model": "another-model"},
+        {"temperature": 0.7},
+        {"thinking_level": "HIGH"},
+        {"system_instruction": "a different rubric"},
+        {"response_json_schema": {"type": "object"}},
+        {"contents": '{"title": "Chess Club"}'},
+    ],
+    ids=lambda change: next(iter(change)),
+)
+def test_anything_the_model_sees_changes_the_hash(change):
+    assert triage_store.input_hash(make_request(**change)) != triage_store.input_hash(
+        make_request()
+    )
+
+
+def test_prompt_hash_changes_with_the_prompt_or_schema_only():
+    base = triage_store.prompt_hash(make_request())
+
+    assert triage_store.prompt_hash(make_request(model="x", contents="{}")) == base
+    assert triage_store.prompt_hash(make_request(system_instruction="new")) != base
+    assert triage_store.prompt_hash(make_request(response_json_schema={})) != base
+
+
+def test_a_saved_reply_comes_back_with_everything_that_was_saved():
+    conn = triage_store.connect(":memory:")
+    request = make_request()
+
+    triage_store.put_response(conn, request, 1, DETAILS)
+    saved = triage_store.get_response(conn, request, 1)
+
+    assert saved["input_hash"] == triage_store.input_hash(request)
+    assert saved["attempt"] == 1
+    assert saved["model"] == request["model"]
+    assert saved["temperature"] == request["temperature"]
+    assert saved["thinking_level"] == request["thinking_level"]
+    assert saved["triage_input_json"] == request["contents"]
+    assert json.loads(saved["triage_input_json"]) == TRIAGE_INPUT
+    assert saved["raw_response"] == DETAILS["raw_response"]
+    assert saved["finish_reason"] == "STOP"
+    for name in schema.TRIAGE_USAGE_FIELDNAMES:
+        assert saved[name] == DETAILS[name]
+    assert saved["cached_content_token_count"] is None
+
+
+def test_the_prompt_is_stored_once_for_many_replies():
+    conn = triage_store.connect(":memory:")
+    for title in ("A", "B", "C"):
+        request = make_request(contents=json.dumps({"title": title}))
+        triage_store.put_response(conn, request, 1, DETAILS)
+
+    assert conn.execute("SELECT COUNT(*) FROM llm_triage_prompt").fetchone() == (1,)
+    assert conn.execute("SELECT COUNT(*) FROM llm_triage_response").fetchone() == (3,)
+    (system_prompt,) = conn.execute("SELECT system_prompt FROM llm_triage_prompt").fetchone()
+    assert system_prompt == gemini_client_util.system_prompt()
+
+
+def test_a_miss_is_none_and_attempts_are_separate():
+    conn = triage_store.connect(":memory:")
+    request = make_request()
+    triage_store.put_response(conn, request, 1, DETAILS)
+
+    assert triage_store.get_response(conn, request, 2) is None
+    assert triage_store.get_response(conn, make_request(model="other"), 1) is None
+
+
+def test_saving_again_keeps_the_first_reply():
+    conn = triage_store.connect(":memory:")
+    request = make_request()
+    triage_store.put_response(conn, request, 1, DETAILS)
+
+    triage_store.put_response(conn, request, 1, {**DETAILS, "raw_response": "changed"})
+
+    assert triage_store.get_response(conn, request, 1)["raw_response"] == (
+        DETAILS["raw_response"]
+    )
+
+
+def test_a_saved_reply_is_on_disk_after_put_without_an_explicit_commit(tmp_path):
+    path = str(tmp_path / "database.sqlite")
+    conn = triage_store.connect(path)
+    triage_store.put_response(conn, make_request(), 1, DETAILS)
+
+    other = triage_store.connect(path)  # a second connection sees it
+
+    assert triage_store.get_response(other, make_request(), 1) is not None

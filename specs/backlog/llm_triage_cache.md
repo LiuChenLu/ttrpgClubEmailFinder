@@ -29,11 +29,13 @@ row per prompt version), `llm_triage_response` (the cache, keyed on
 2. Database: `config.DATABASE_PATH`; `triage_store.py` applies the numbered
    `migrations/*.sql` with `PRAGMA user_version` (never drop `llm_triage_response`).
    **Done.**
-3. `label_with_retry` reads the store first; `--cache-only`.
+3. `label_with_retry` reads the store first; `--cache-only`. **Done.** Docs for
+   it are in `stage2_filter_candidates.md` ("Saved model replies").
 4. Write `llm_triage_result`; edit `schema.py` and `data_flow.md` together.
 5. Tests (fake client, in-memory db: 2nd run makes zero calls) and docs.
 
-## Open questions
-- Is `(unitid, result_url)` unique in the 2a file, sentinels included? Check first.
-- `triage_model` is not in the result table; join the response table. OK?
-- Does the 2b CSV go away now, or stay until Stage 3 reads the database?
+## Decided
+- `(unitid, result_url)` is unique. An institution can have several `unitid`s, and
+  the same model input must share one saved reply, so `unitid` is not in the key.
+- `triage_model` is kept in `llm_triage_result` as well as in the response table.
+- The 2b CSV is removed later, not in this change.

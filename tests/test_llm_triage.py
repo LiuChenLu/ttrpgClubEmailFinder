@@ -4,9 +4,11 @@ from pathlib import Path
 
 import pytest
 
+import config
 import gemini_client_util
 import llm_triage
 import schema
+import triage_store
 
 SPEC_SCHEMA = Path(__file__).parent.parent / "specs/stage2b_llm_triage/schema.json"
 
@@ -51,7 +53,7 @@ def make_labels(**overrides):
 
 def fixed_labels(**overrides):
     """A label_result that returns the same labels for every row."""
-    return lambda triage_input: make_labels(**overrides)
+    return lambda triage_input, attempt: make_labels(**overrides)
 
 
 # --- schema and domain check --------------------------------------------------------
@@ -316,7 +318,7 @@ def test_every_drop_reason_is_a_listed_triage_discard_reason():
 def test_triage_row_sends_the_model_only_the_triage_input():
     sent = []
 
-    def label_result(triage_input):
+    def label_result(triage_input, attempt):
         sent.append(triage_input)
         return make_labels()
 
@@ -343,7 +345,7 @@ def test_triage_row_discards_with_the_reason_in_decision():
     ],
 )
 def test_triage_row_does_not_call_the_model_for_non_candidates(row):
-    def label_result(triage_input):
+    def label_result(triage_input, attempt):
         pytest.fail("a non-candidate must not be sent to the model")
 
     result = llm_triage.triage_row(row, label_result)
@@ -355,7 +357,7 @@ def test_triage_row_does_not_call_the_model_for_non_candidates(row):
 def test_api_error_keeps_the_row_with_blank_labels_and_does_not_retry():
     calls = []
 
-    def label_result(triage_input):
+    def label_result(triage_input, attempt):
         calls.append(triage_input)
         raise TimeoutError("boom")
 
@@ -370,7 +372,7 @@ def test_api_error_keeps_the_row_with_blank_labels_and_does_not_retry():
 def test_invalid_output_is_retried_once_then_kept_with_blank_labels():
     calls = []
 
-    def label_result(triage_input):
+    def label_result(triage_input, attempt):
         calls.append(triage_input)
         return {"page_type": "other"}
 
@@ -385,7 +387,9 @@ def test_invalid_output_is_retried_once_then_kept_with_blank_labels():
 def test_invalid_output_that_is_fixed_by_the_retry_is_labeled():
     responses = iter([{"page_type": "other"}, make_labels(page_type="other")])
 
-    result = llm_triage.triage_row(make_row(), lambda triage_input: next(responses))
+    result = llm_triage.triage_row(
+        make_row(), lambda triage_input, attempt: next(responses)
+    )
 
     assert result["decision"] == "discard_wrong_page_type"
     assert result["triage_status"] == ""
@@ -420,7 +424,7 @@ def test_run_llm_triage_writes_every_row_with_the_schema_columns_and_counts(
     ]
     write_filtered_csv(input_csv, rows)
 
-    def label_result(triage_input):
+    def label_result(triage_input, attempt):
         if triage_input["title"] == "Chess Club":
             return make_labels(page_type="other")
         return make_labels()
@@ -456,3 +460,194 @@ def test_run_llm_triage_rejects_missing_columns_without_truncating_output(tmp_pa
         llm_triage.run_llm_triage(str(input_csv), str(output_csv))
 
     assert output_csv.read_text(encoding="utf-8") == "previous output\n"
+
+
+# --- saved replies: the database path --------------------------------------------------
+
+
+class FakeResponse:
+    def __init__(self, text, **usage):
+        self.text = text
+        self.usage_metadata = type("Usage", (), usage)()
+
+
+class FakeModel:
+    """A send_request that records its calls and answers from a script."""
+
+    def __init__(self, *texts):
+        self.texts = list(texts)
+        self.requests = []
+
+    def __call__(self, request):
+        self.requests.append(request)
+        text = self.texts.pop(0) if self.texts else json.dumps(make_labels())
+        if isinstance(text, Exception):
+            raise text
+        return FakeResponse(text, prompt_token_count=10, total_token_count=12)
+
+
+def run_triage(tmp_path, rows, send_request, cache_only=False, name="out.csv"):
+    input_csv = tmp_path / "filtered.csv"
+    output_csv = tmp_path / name
+    write_filtered_csv(input_csv, rows)
+    llm_triage.run_llm_triage(
+        str(input_csv),
+        str(output_csv),
+        database_path=str(tmp_path / "database.sqlite"),
+        cache_only=cache_only,
+        send_request=send_request,
+    )
+    return read_csv(output_csv)[1]
+
+
+def test_a_second_run_makes_zero_model_calls_and_gives_the_same_output(tmp_path):
+    rows = [make_row(unitid="1"), make_row(unitid="2", result_title="Chess Club")]
+    first_model = FakeModel()
+
+    first = run_triage(tmp_path, rows, first_model, name="first.csv")
+    second_model = FakeModel()
+    second = run_triage(tmp_path, rows, second_model, name="second.csv")
+
+    assert len(first_model.requests) == 2
+    assert second_model.requests == []
+    assert second == first
+
+
+def test_two_unitids_with_the_same_model_input_share_one_call(tmp_path):
+    rows = [
+        make_row(unitid="100", city="Main campus"),
+        make_row(unitid="200", city="Legacy campus"),
+    ]
+    model = FakeModel()
+
+    result = run_triage(tmp_path, rows, model)
+
+    assert len(model.requests) == 1
+    assert [r["unitid"] for r in result] == ["100", "200"]
+    assert result[0]["page_type"] == result[1]["page_type"] == "tabletop_club"
+
+
+def test_a_different_model_input_is_a_miss(tmp_path):
+    rows = [make_row(unitid="1"), make_row(unitid="2", college_name="Other College")]
+    model = FakeModel()
+
+    run_triage(tmp_path, rows, model)
+
+    assert len(model.requests) == 2
+
+
+def test_a_changed_model_or_prompt_calls_the_model_again(tmp_path, monkeypatch):
+    rows = [make_row()]
+    run_triage(tmp_path, rows, FakeModel(), name="a.csv")
+    monkeypatch.setattr(gemini_client_util, "TRIAGE_MODEL", "another-model")
+    other_model = FakeModel()
+
+    run_triage(tmp_path, rows, other_model, name="b.csv")
+
+    assert len(other_model.requests) == 1
+    assert other_model.requests[0]["model"] == "another-model"
+
+
+def test_an_invalid_reply_and_its_retry_are_saved_and_replayed_for_free(tmp_path):
+    rows = [make_row()]
+    first_model = FakeModel('{"page_type": "other"}', json.dumps(make_labels()))
+
+    first = run_triage(tmp_path, rows, first_model, name="first.csv")
+    second_model = FakeModel()
+    second = run_triage(tmp_path, rows, second_model, name="second.csv")
+
+    assert len(first_model.requests) == 2
+    assert second_model.requests == []
+    assert first[0]["triage_status"] == second[0]["triage_status"] == ""
+    assert first[0]["page_type"] == second[0]["page_type"] == "tabletop_club"
+    conn = triage_store.connect(str(tmp_path / "database.sqlite"))
+    attempts = conn.execute(
+        "SELECT attempt FROM llm_triage_response ORDER BY attempt"
+    ).fetchall()
+    assert attempts == [(1,), (2,)]
+
+
+def test_an_api_error_is_not_saved_so_the_next_run_tries_again(tmp_path):
+    rows = [make_row()]
+
+    failed = run_triage(
+        tmp_path, rows, FakeModel(TimeoutError("boom")), name="failed.csv"
+    )
+    retry_model = FakeModel()
+    retried = run_triage(tmp_path, rows, retry_model, name="retried.csv")
+
+    assert failed[0]["triage_status"] == "api_error"
+    assert len(retry_model.requests) == 1
+    assert retried[0]["triage_status"] == ""
+
+
+def test_the_label_rules_can_change_without_a_new_call(tmp_path, monkeypatch):
+    rows = [make_row()]
+    run_triage(
+        tmp_path, rows, FakeModel(json.dumps(make_labels(page_type="other"))), name="a.csv"
+    )
+    monkeypatch.setattr(llm_triage, "drop_reason", lambda labels: None)
+    model = FakeModel()
+
+    tuned = run_triage(tmp_path, rows, model, name="b.csv")
+
+    assert model.requests == []
+    assert tuned[0]["page_type"] == "other"
+    assert tuned[0]["decision"] == "keep"
+
+
+def test_cache_only_uses_saved_replies_and_never_calls_the_model(tmp_path):
+    saved_row = make_row(unitid="1")
+    new_row = make_row(unitid="2", result_title="Chess Club")
+    run_triage(tmp_path, [saved_row], FakeModel(), name="fill.csv")
+    model = FakeModel()
+
+    result = run_triage(
+        tmp_path, [saved_row, new_row], model, cache_only=True, name="only.csv"
+    )
+
+    assert model.requests == []
+    assert result[0]["triage_status"] == ""
+    assert result[0]["page_type"] == "tabletop_club"
+    assert result[1]["triage_status"] == "cache_miss"
+    assert result[1]["decision"] == "keep"
+    assert result[1]["page_type"] == ""
+
+
+def test_cache_only_saves_nothing(tmp_path):
+    run_triage(tmp_path, [make_row()], FakeModel(), cache_only=True)
+
+    conn = triage_store.connect(str(tmp_path / "database.sqlite"))
+    assert conn.execute("SELECT COUNT(*) FROM llm_triage_response").fetchone() == (0,)
+
+
+def test_the_triage_model_column_is_still_written_on_a_replayed_row(tmp_path):
+    rows = [make_row()]
+    run_triage(tmp_path, rows, FakeModel(), name="a.csv")
+
+    replayed = run_triage(tmp_path, rows, FakeModel(), name="b.csv")
+
+    assert replayed[0]["triage_model"] == config.TRIAGE_MODEL
+
+
+def test_a_bad_input_csv_creates_no_database(tmp_path):
+    input_csv = tmp_path / "incomplete.csv"
+    input_csv.write_text("unitid\n1\n", encoding="utf-8")
+    database = tmp_path / "database.sqlite"
+
+    with pytest.raises(ValueError, match="is missing columns"):
+        llm_triage.run_llm_triage(
+            str(input_csv), str(tmp_path / "out.csv"), database_path=str(database)
+        )
+
+    assert not database.exists()
+
+
+def test_run_llm_triage_prints_how_many_replies_were_saved_and_called(tmp_path, capsys):
+    rows = [make_row()]
+    run_triage(tmp_path, rows, FakeModel(), name="a.csv")
+    capsys.readouterr()
+
+    run_triage(tmp_path, rows, FakeModel(), name="b.csv")
+
+    assert "model replies: 1 saved, 0 new calls" in capsys.readouterr().out

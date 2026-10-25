@@ -66,7 +66,11 @@ def test_run_llm_triage_labels_a_row_and_records_the_model(tmp_path):
         writer.writeheader()
         writer.writerow(ROW)
 
-    llm_triage.run_llm_triage(str(input_csv), str(output_csv))
+    llm_triage.run_llm_triage(
+        str(input_csv),
+        str(output_csv),
+        database_path=str(tmp_path / "database.sqlite"),
+    )
 
     with output_csv.open(newline="", encoding="utf-8") as f:
         (row,) = list(csv.DictReader(f))

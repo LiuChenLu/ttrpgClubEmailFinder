@@ -57,6 +57,47 @@ def test_data_flow_lists_each_column_under_the_stage_that_adds_it():
     }
 
 
+def database_columns_in_stage2_doc():
+    """Map table name to the column named at the start of each top-level bullet
+    under that table's level-4 heading. Nested bullets (value lists) are skipped.
+    """
+    text = (ROOT / "docs" / "stages" / "stage2_filter_candidates.md").read_text(
+        encoding="utf-8"
+    )
+    columns = {}
+    table = None
+    for line in text.splitlines():
+        heading = re.match(r"#### `([a-z0-9_]+)`", line)
+        if heading:
+            table = heading.group(1)
+            columns[table] = []
+            continue
+        if line.startswith("#") and not heading:
+            table = None
+        cell = re.match(r"- `([a-z0-9_]+)`(:|$)", line)
+        if table is not None and cell:
+            columns[table].append(cell.group(1))
+    return columns
+
+
+def test_stage2_doc_describes_every_database_column():
+    import triage_store
+
+    conn = triage_store.connect(":memory:")
+    actual = {
+        table: [row[1] for row in conn.execute(f"PRAGMA table_info({table})")]
+        for (table,) in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    }
+
+    documented = database_columns_in_stage2_doc()
+
+    assert {t: sorted(c) for t, c in documented.items()} == {
+        t: sorted(c) for t, c in actual.items()
+    }
+
+
 def test_data_flow_lists_no_column_twice():
     documented = [c for cols in stage_columns_in_data_flow().values() for c in cols]
 

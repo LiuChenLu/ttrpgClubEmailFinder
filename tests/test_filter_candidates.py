@@ -13,12 +13,14 @@ def test_main_runs_rule_based_filter_then_llm_triage_on_its_output(monkeypatch):
     monkeypatch.setattr(
         filter_candidates.llm_triage,
         "run_llm_triage",
-        lambda input_csv, output_csv: calls.append(("triage", input_csv, output_csv)),
+        lambda input_csv, output_csv, cache_only: calls.append(
+            ("triage", input_csv, output_csv, cache_only)
+        ),
     )
 
     filter_candidates.main("search.csv", "filtered.csv", "llm_filtered.csv")
 
     assert calls == [
         ("rules", "search.csv", "filtered.csv"),
-        ("triage", "filtered.csv", "llm_filtered.csv"),
+        ("triage", "filtered.csv", "llm_filtered.csv", False),
     ]

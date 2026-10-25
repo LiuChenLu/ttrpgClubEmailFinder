@@ -1,4 +1,5 @@
-"""The SQLite database behind Stage 2b: opening it and keeping its schema current.
+"""The SQLite database behind Stage 2b: opening it, keeping its schema current,
+and saving and finding the model's replies.
 
 The schema lives in `config.MIGRATIONS_DIR`, one `NNNN_name.sql` file per change
 (numbered from 0001 with no gaps). The file's version is SQLite's
@@ -12,11 +13,14 @@ Importing this module reads no files and opens no database.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import sqlite3
 
 from config import DATABASE_PATH, MIGRATIONS_DIR
+from schema import TRIAGE_USAGE_FIELDNAMES
 
 _MIGRATION_NAME = re.compile(r"(\d{4})_[A-Za-z0-9_]+\.sql")
 
@@ -94,3 +98,98 @@ def connect(
         conn.close()
         raise
     return conn
+
+
+# --- Saved model replies -----------------------------------------------------
+
+
+class CacheMiss(LookupError):
+    """No saved reply, and the caller asked not to call the model."""
+
+
+RESPONSE_COLUMNS = [
+    "input_hash", "attempt", "model", "prompt_hash", "temperature",
+    "thinking_level", "triage_input_json", "raw_response", "finish_reason",
+    *TRIAGE_USAGE_FIELDNAMES,
+]
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def input_hash(request: dict) -> str:
+    """The key of a `gemini_client_util.build_request` dict.
+
+    It covers everything the model sees (model, system prompt, reply schema,
+    temperature, thinking level, contents), so changing any of them is a miss.
+    Nothing outside the model's input is in it, so two CSV rows that differ only
+    in `unitid` have the same key.
+    """
+    return _sha256(_canonical_json(request))
+
+
+def prompt_hash(request: dict) -> str:
+    """Key of the prompt version: the system prompt and the reply schema."""
+    return _sha256(
+        _canonical_json(
+            {
+                "system_instruction": request["system_instruction"],
+                "response_json_schema": request["response_json_schema"],
+            }
+        )
+    )
+
+
+def get_response(conn: sqlite3.Connection, request: dict, attempt: int) -> dict | None:
+    """The saved row for this request and attempt as a dict, or None."""
+    cursor = conn.execute(
+        "SELECT * FROM llm_triage_response WHERE input_hash = ? AND attempt = ?",
+        (input_hash(request), attempt),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    return dict(zip((column[0] for column in cursor.description), row))
+
+
+def put_response(
+    conn: sqlite3.Connection, request: dict, attempt: int, details: dict
+) -> None:
+    """Save one reply; `details` is `gemini_client_util.response_details`.
+
+    A row already saved for the same input and attempt is kept, never replaced:
+    the first reply is the one every later tuning run must see. Commits at once,
+    so a crash loses at most the call in flight.
+    """
+    values = {
+        "input_hash": input_hash(request),
+        "attempt": attempt,
+        "model": request["model"],
+        "prompt_hash": prompt_hash(request),
+        "temperature": request["temperature"],
+        "thinking_level": request["thinking_level"],
+        "triage_input_json": request["contents"],
+        "raw_response": details.get("raw_response"),
+        "finish_reason": details.get("finish_reason"),
+        **{name: details.get(name) for name in TRIAGE_USAGE_FIELDNAMES},
+    }
+    with conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO llm_triage_prompt"
+            " (prompt_hash, system_prompt, response_schema) VALUES (?, ?, ?)",
+            (
+                values["prompt_hash"],
+                request["system_instruction"],
+                _canonical_json(request["response_json_schema"]),
+            ),
+        )
+        conn.execute(
+            f"INSERT OR IGNORE INTO llm_triage_response ({', '.join(RESPONSE_COLUMNS)})"
+            f" VALUES ({', '.join('?' for _ in RESPONSE_COLUMNS)})",
+            [values[name] for name in RESPONSE_COLUMNS],
+        )

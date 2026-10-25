@@ -68,8 +68,8 @@ fields are in the order the model returns them, evidence first.
 - `url_evidence_for_institution`: quote from the URL behind `institution`
 - `institution`: `supported`, `not_supported` or `unknown`
 - `institution_certainty`: `clear` or `probable`
-- `triage_status`: blank on success; `api_error` or `invalid_output` when the
-  call failed and the row was kept with blank labels
+- `triage_status`: blank on success; `api_error`, `invalid_output` or (only with
+  `--cache-only`) `cache_miss` when the row was kept with blank labels
 - `triage_model`: `config.TRIAGE_MODEL`, for rows sent to the model
 - `triage_prompt_version`: `config.TRIAGE_PROMPT_VERSION`, for rows sent to the model
 

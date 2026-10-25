@@ -29,7 +29,7 @@ from config import (
     TRIAGE_TEMPERATURE,
     TRIAGE_THINKING_LEVEL,
 )
-from schema import TRIAGE_ENUM_VALUES, TRIAGE_LABEL_FIELDNAMES
+from schema import TRIAGE_ENUM_VALUES, TRIAGE_LABEL_FIELDNAMES, TRIAGE_USAGE_FIELDNAMES
 
 # Only these are retried by the client; any other API error is raised at once.
 RETRY_STATUS_CODES = [429, 500, 502, 503, 504]
@@ -127,6 +127,23 @@ def send_request(request: dict, client: genai.Client | None = None):
             response_json_schema=request["response_json_schema"],
         ),
     )
+
+
+def response_details(response) -> dict:
+    """What triage_store saves of an SDK response: the reply text as written,
+    the finish reason's name, and the token counts in TRIAGE_USAGE_FIELDNAMES.
+
+    Anything the response lacks is None, so a fake response with only `.text`
+    works and a count the SDK omits stays NULL in the database.
+    """
+    usage = getattr(response, "usage_metadata", None)
+    candidates = getattr(response, "candidates", None) or []
+    finish_reason = getattr(candidates[0], "finish_reason", None) if candidates else None
+    return {
+        "raw_response": getattr(response, "text", None),
+        "finish_reason": getattr(finish_reason, "name", finish_reason),
+        **{name: getattr(usage, name, None) for name in TRIAGE_USAGE_FIELDNAMES},
+    }
 
 
 def parse_reply(text: str | None) -> dict:

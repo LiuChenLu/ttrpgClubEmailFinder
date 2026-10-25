@@ -140,7 +140,7 @@ def test_an_api_failure_is_raised_not_swallowed():
 
 
 def test_an_api_failure_keeps_the_row_through_triage_row():
-    def label_result(triage_input):
+    def label_result(triage_input, attempt):
         return gemini_client_util.label_result(
             triage_input, FakeClient(error=TimeoutError("boom"))
         )
@@ -170,3 +170,27 @@ def test_passing_a_client_never_builds_the_shared_one(monkeypatch):
     gemini_client_util.label_result(TRIAGE_INPUT, FakeClient(text="{}"))
 
     assert gemini_client_util.gemini.cache_info().currsize == 0
+
+
+def test_response_details_reads_text_finish_reason_and_every_usage_field():
+    usage = type("Usage", (), {name: i for i, name in enumerate(
+        schema.TRIAGE_USAGE_FIELDNAMES, start=1
+    )})()
+    candidate = type("Candidate", (), {"finish_reason": type("R", (), {"name": "STOP"})()})()
+    response = type(
+        "Response", (), {"text": "{}", "usage_metadata": usage, "candidates": [candidate]}
+    )()
+
+    details = gemini_client_util.response_details(response)
+
+    assert details["raw_response"] == "{}"
+    assert details["finish_reason"] == "STOP"
+    assert [details[n] for n in schema.TRIAGE_USAGE_FIELDNAMES] == [1, 2, 3, 4, 5, 6]
+
+
+def test_response_details_leaves_anything_missing_as_none():
+    details = gemini_client_util.response_details(FakeModels(text="hi").generate_content())
+
+    assert details["raw_response"] == "hi"
+    assert details["finish_reason"] is None
+    assert {details[n] for n in schema.TRIAGE_USAGE_FIELDNAMES} == {None}

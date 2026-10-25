@@ -51,6 +51,7 @@ CREATE TABLE llm_triage_result (
     institution TEXT,
     institution_certainty TEXT,
     triage_status TEXT,
+    triage_model TEXT,
     triage_prompt_version TEXT,
     PRIMARY KEY (unitid, result_url)
 );

@@ -19,7 +19,9 @@ from collections import Counter
 from collections.abc import Callable
 
 import gemini_client_util
+import triage_store
 from config import (
+    DATABASE_PATH,
     DEFAULT_FILTERED_CSV,
     DEFAULT_LLM_FILTERED_CSV,
     TRIAGE_MAX_ATTEMPTS,
@@ -42,6 +44,7 @@ from schema import (
     TRIAGE_LABEL_FIELDNAMES,
     TRIAGE_NEW_FIELDNAMES,
     TRIAGE_STATUS_API_ERROR,
+    TRIAGE_STATUS_CACHE_MISS,
     TRIAGE_STATUS_INVALID_OUTPUT,
     discard_decision,
     is_keep,
@@ -200,18 +203,62 @@ def should_drop(labels: dict) -> bool:
 # --- One row -----------------------------------------------------------------------
 
 
+def uncached_label_result(triage_input: dict, attempt: int) -> dict:
+    """A `label_result` that always calls the model and saves nothing."""
+    return gemini_client_util.label_result(triage_input)
+
+
+def cached_label_result(
+    conn,
+    send_request: Callable[[dict], object] | None = None,
+    cache_only: bool = False,
+    stats: Counter | None = None,
+) -> Callable[[dict, int], dict]:
+    """A `label_result` that reads the saved reply for (input, attempt) first.
+
+    On a miss it calls `send_request` and saves the reply before returning it.
+    An exception from `send_request` propagates and saves nothing, so a failed
+    call is never replayed. An invalid reply is saved like any other: a later
+    run replays the same bad answer, then the same retry, at no cost. With
+    `cache_only` a miss raises `triage_store.CacheMiss` and the model is never
+    called. `stats` counts "saved" and "called". `send_request` defaults to
+    `gemini_client_util.send_request`; tests pass a fake.
+    """
+    stats = stats if stats is not None else Counter()
+    send_request = send_request or gemini_client_util.send_request
+
+    def label_result(triage_input: dict, attempt: int) -> dict:
+        request = gemini_client_util.build_request(triage_input)
+        saved = triage_store.get_response(conn, request, attempt)
+        if saved is not None:
+            stats["saved"] += 1
+            return gemini_client_util.parse_reply(saved["raw_response"])
+        if cache_only:
+            raise triage_store.CacheMiss(f"no saved reply for attempt {attempt}")
+        details = gemini_client_util.response_details(send_request(request))
+        triage_store.put_response(conn, request, attempt, details)
+        stats["called"] += 1
+        return gemini_client_util.parse_reply(details["raw_response"])
+
+    return label_result
+
+
 def label_with_retry(
-    triage_input: dict, label_result: Callable[[dict], dict]
+    triage_input: dict, label_result: Callable[[dict, int], dict]
 ) -> tuple[dict, str]:
     """(checked labels, triage_status). Labels are blank when status isn't.
 
-    An exception from the client is final: it retries 429 and 5xx itself. An
-    invalid response is retried until TRIAGE_MAX_ATTEMPTS.
+    `label_result(triage_input, attempt)` gets the attempt number (1-based) so a
+    saved reply can be found for each try. An exception from the client is
+    final: it retries 429 and 5xx itself. An invalid response is retried until
+    TRIAGE_MAX_ATTEMPTS. A `CacheMiss` is its own status, not an API error.
     """
     blank = dict.fromkeys(TRIAGE_LABEL_FIELDNAMES, "")
-    for _ in range(TRIAGE_MAX_ATTEMPTS):
+    for attempt in range(1, TRIAGE_MAX_ATTEMPTS + 1):
         try:
-            response = label_result(triage_input)
+            response = label_result(triage_input, attempt)
+        except triage_store.CacheMiss:
+            return blank, TRIAGE_STATUS_CACHE_MISS
         except Exception:
             return blank, TRIAGE_STATUS_API_ERROR
         try:
@@ -223,7 +270,7 @@ def label_with_retry(
 
 def triage_row(
     row: dict,
-    label_result: Callable[[dict], dict] = gemini_client_util.label_result,
+    label_result: Callable[[dict, int], dict] = uncached_label_result,
     model: str = TRIAGE_MODEL,
     prompt_version: str = TRIAGE_PROMPT_VERSION,
 ) -> dict:
@@ -255,41 +302,78 @@ def triage_row(
 def run_llm_triage(
     input_csv: str = DEFAULT_FILTERED_CSV,
     output_csv: str = DEFAULT_LLM_FILTERED_CSV,
-    label_result: Callable[[dict], dict] = gemini_client_util.label_result,
+    label_result: Callable[[dict, int], dict] | None = None,
+    database_path: str = DATABASE_PATH,
+    cache_only: bool = False,
+    send_request: Callable[[dict], object] | None = None,
 ) -> None:
-    """Read Stage 2a's CSV, triage the kept rows, and write every row out."""
+    """Read Stage 2a's CSV, triage the kept rows, and write every row out.
+
+    By default every reply goes through the database at `database_path`: a
+    saved reply is reused and Gemini is called only for a miss. `cache_only`
+    never calls Gemini; a miss keeps the row with `triage_status=cache_miss`.
+    `send_request` replaces the Gemini call but keeps the database (for tests).
+    A `label_result` replaces all of that: the database isn't opened and
+    `cache_only` is ignored.
+    """
     decision_counts = Counter()
     status_counts = Counter()
+    reply_counts = Counter()
 
     with open(input_csv, newline="", encoding="utf-8") as f_in:
         reader = csv.DictReader(f_in)
         require_columns(input_csv, reader.fieldnames, FILTERED_FIELDNAMES)
 
-        with open(output_csv, "w", newline="", encoding="utf-8") as f_out:
-            writer = csv.DictWriter(
-                f_out, fieldnames=LLM_FILTERED_FIELDNAMES, extrasaction="ignore"
+        # Opened only after the column check, so a bad input creates no file.
+        conn = None
+        if label_result is None:
+            conn = triage_store.connect(database_path)
+            label_result = cached_label_result(
+                conn, send_request, cache_only=cache_only, stats=reply_counts
             )
-            writer.writeheader()
+        try:
+            with open(output_csv, "w", newline="", encoding="utf-8") as f_out:
+                writer = csv.DictWriter(
+                    f_out, fieldnames=LLM_FILTERED_FIELDNAMES, extrasaction="ignore"
+                )
+                writer.writeheader()
 
-            for row in reader:
-                result = triage_row(row, label_result)
-                writer.writerow({**row, **result})
-                decision_counts[result["decision"]] += 1
-                if result["triage_status"]:
-                    status_counts[result["triage_status"]] += 1
+                for row in reader:
+                    result = triage_row(row, label_result)
+                    writer.writerow({**row, **result})
+                    decision_counts[result["decision"]] += 1
+                    if result["triage_status"]:
+                        status_counts[result["triage_status"]] += 1
+        finally:
+            if conn is not None:
+                conn.close()
 
     print("LLM triage rows by decision:")
     print(f"  {KEEP}: {decision_counts[KEEP]}")
     for reason in TRIAGE_DISCARD_REASONS:
         print(f"  {reason}: {decision_counts[discard_decision(reason)]}")
-    for status in (TRIAGE_STATUS_API_ERROR, TRIAGE_STATUS_INVALID_OUTPUT):
+    for status in (
+        TRIAGE_STATUS_API_ERROR,
+        TRIAGE_STATUS_INVALID_OUTPUT,
+        TRIAGE_STATUS_CACHE_MISS,
+    ):
         print(f"  triage failed, kept ({status}): {status_counts[status]}")
+    if conn is not None:
+        print(
+            f"  model replies: {reply_counts['saved']} saved, "
+            f"{reply_counts['called']} new calls"
+        )
 
 
 if __name__ == "__main__":
-    args = build_parser(
+    parser = build_parser(
         "Stage 2b: LLM triage of the rows Stage 2a kept.",
         DEFAULT_FILTERED_CSV,
         DEFAULT_LLM_FILTERED_CSV,
-    ).parse_args()
-    run_llm_triage(args.input_csv, args.output_csv)
+    )
+    parser.add_argument(
+        "--cache-only", action="store_true",
+        help="use saved model replies only; never call Gemini",
+    )
+    args = parser.parse_args()
+    run_llm_triage(args.input_csv, args.output_csv, cache_only=args.cache_only)
