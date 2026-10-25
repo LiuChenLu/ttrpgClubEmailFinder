@@ -163,6 +163,9 @@ schema. The CSV is still written.
   blank labels and `triage_status=cache_miss`. It and `--note "text"` (saved
   with the run) are options of both `llm_triage.py` and `filter_candidates.py`.
 - The run prints how many replies were saved and how many were new calls.
+- The run also prints the total and cached-content token counts for new Gemini
+  calls. Cached database replies are excluded; if Gemini omits total token usage,
+  the output reports how many responses lack that count.
 - **Runs.** Each run is saved as a numbered row in `llm_triage_run` (model,
   prompt, settings, git commit, your `--note`) with one `llm_triage_result` row
   per Stage 2a row. Nothing is replaced, so runs with another model, prompt or

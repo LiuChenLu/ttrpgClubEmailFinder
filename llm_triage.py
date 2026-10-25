@@ -241,6 +241,14 @@ def cached_label_result(
         details = gemini_client_util.response_details(send_request(request))
         triage_store.put_response(conn, request, attempt, details)
         stats["called"] += 1
+        total_tokens = details["total_token_count"]
+        if total_tokens is None:
+            stats["total_token_count_missing"] += 1
+        else:
+            stats["total_token_count"] += total_tokens
+        stats["cached_content_token_count"] += (
+            details["cached_content_token_count"] or 0
+        )
         return gemini_client_util.parse_reply(details["raw_response"])
 
     return label_result
@@ -447,6 +455,19 @@ def run_llm_triage(
         print(
             f"  model replies: {reply_counts['saved']} saved, "
             f"{reply_counts['called']} new calls"
+        )
+        total_tokens = reply_counts["total_token_count"]
+        if reply_counts["total_token_count_missing"]:
+            total_usage = (
+                f"{total_tokens} total "
+                f"({reply_counts['total_token_count_missing']} response(s) "
+                "missing total token usage)"
+            )
+        else:
+            total_usage = f"{total_tokens} total"
+        print(
+            f"  token usage (new calls): {total_usage}, "
+            f"{reply_counts['cached_content_token_count']} cached-content"
         )
         print(f"  saved as run {run_id} (compare runs: compare_triage_runs.py)")
     return run_id

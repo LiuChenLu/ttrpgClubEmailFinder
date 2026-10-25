@@ -474,16 +474,22 @@ class FakeResponse:
 class FakeModel:
     """A send_request that records its calls and answers from a script."""
 
-    def __init__(self, *texts):
+    def __init__(self, *texts, cached_content_token_count=0):
         self.texts = list(texts)
         self.requests = []
+        self.cached_content_token_count = cached_content_token_count
 
     def __call__(self, request):
         self.requests.append(request)
         text = self.texts.pop(0) if self.texts else json.dumps(make_labels())
         if isinstance(text, Exception):
             raise text
-        return FakeResponse(text, prompt_token_count=10, total_token_count=12)
+        return FakeResponse(
+            text,
+            prompt_token_count=10,
+            total_token_count=12,
+            cached_content_token_count=self.cached_content_token_count,
+        )
 
 
 def run_triage(tmp_path, rows, send_request, cache_only=False, name="out.csv"):
@@ -643,14 +649,19 @@ def test_a_bad_input_csv_creates_no_database(tmp_path):
     assert not database.exists()
 
 
-def test_run_llm_triage_prints_how_many_replies_were_saved_and_called(tmp_path, capsys):
+def test_run_llm_triage_prints_reply_and_token_usage(tmp_path, capsys):
     rows = [make_row()]
-    run_triage(tmp_path, rows, FakeModel(), name="a.csv")
-    capsys.readouterr()
+    first_model = FakeModel(cached_content_token_count=3)
+    run_triage(tmp_path, rows, first_model, name="a.csv")
+    first_output = capsys.readouterr().out
+    assert "model replies: 0 saved, 1 new calls" in first_output
+    assert "token usage (new calls): 12 total, 3 cached-content" in first_output
 
     run_triage(tmp_path, rows, FakeModel(), name="b.csv")
 
-    assert "model replies: 1 saved, 0 new calls" in capsys.readouterr().out
+    second_output = capsys.readouterr().out
+    assert "model replies: 1 saved, 0 new calls" in second_output
+    assert "token usage (new calls): 0 total, 0 cached-content" in second_output
 
 
 # --- runs and the llm_triage_result table -------------------------------------------------
