@@ -51,7 +51,7 @@ from stage_cli import build_parser
 URL_TERMS = (
     (REASON_NEWS, ("blog", "news", "article", "dailydigest", "stories", "story", "forum", "journal")),
     (REASON_EVENT, ("rsvp", "event", "calendar", "2026")),
-    (REASON_WIKI, ("wiki")),
+    (REASON_WIKI, ("wiki,")),
     (REASON_STOREFRONTS, ("store", "shop", "market")),
 )
 

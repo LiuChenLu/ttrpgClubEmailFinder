@@ -5,14 +5,8 @@ should. `docs/` describes the code as it is. Remove an entry when it is fixed.
 Limits of working code are not bugs; they go in the stage doc's "Open gaps".
 
 - **Stage 3 length comparison.** Playwright text replaces existing content only
-  if it is longer, but Tavily content is markdown and Playwright's is plain text,
-  so the lengths aren't comparable (`render_candidates.render_row`). Expected to
-  have a small effect.
-- **Stage 2a `wiki` rule matches single letters.** `URL_TERMS` has
-  `(REASON_WIKI, ("wiki"))`, a string, not a one-item tuple, so
-  `any(term in url for term in terms)` tests the letters `w`, `i`, `k`. Any URL
-  containing one of them (every `www.` URL) is discarded as `wiki`. Fix:
-  `("wiki",)`. `tests/test_pipeline_contract.py::test_decisions_survive_every_stage_and_only_keep_is_scanned`
-  fails because of it.
+  if it is longer, but Tavily content is markdown and Playwright's is plain
+  text, so the lengths aren't comparable (`render_candidates.render_row`).
+  Expected to have a small effect.
 - **Stage 4 duplicate invites.** `discord_found` isn't deduplicated, unlike
   `email_found` (`extract_contact_info.contact_columns`).
