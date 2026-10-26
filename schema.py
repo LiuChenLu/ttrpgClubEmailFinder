@@ -82,6 +82,7 @@ DISCARD_PREFIX = "discard_"
 # DISCARD_PREFIX + reason. Add new reasons here and nowhere else.
 REASON_PDF = "pdf"
 REASON_NEWS = "news"
+REASON_FORUM = "forum"
 REASON_EVENT = "event"
 REASON_WIKI = "wiki"
 REASON_STOREFRONTS = "storefronts"
@@ -89,6 +90,7 @@ REASON_NO_KEYWORDS = "snippets_has_no_club_or_ttrpg_keywords"
 REASON_SENTINEL_ROW = "sentinel_row"
 DISCARD_REASONS = (
     REASON_PDF,
+    REASON_FORUM,
     REASON_NEWS,
     REASON_WIKI,
     REASON_EVENT,
