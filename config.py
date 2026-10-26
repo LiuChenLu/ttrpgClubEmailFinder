@@ -95,7 +95,7 @@ TRIAGE_PROMPT_VERSION = "v0"
 TRIAGE_TEMPERATURE = 0
 # A ThinkingLevel name: MINIMAL, LOW, MEDIUM or HIGH. Labeling from a title and
 # URL is a short task, so start low and raise it only if the eval shows a gain.
-TRIAGE_THINKING_LEVEL = "LOW"
+TRIAGE_THINKING_LEVEL = "MEDIUM"
 # Total tries per call, and the backoff between them, for 429 and 5xx responses.
 # The client does these; TRIAGE_MAX_ATTEMPTS only counts invalid responses.
 TRIAGE_API_ATTEMPTS = 4
