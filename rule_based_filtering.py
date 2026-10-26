@@ -51,7 +51,7 @@ from stage_cli import build_parser
 # Ordered (reason, URL substrings) pairs. The first reason with a hit wins.
 URL_TERMS = (
     (REASON_NEWS, ("news", "article", "dailydigest", "stories", "story", "journal")),
-    (REASON_FORUM, ("blog" "forum", "thread")),
+    (REASON_FORUM, ("blog", "forum", "thread")),
     (REASON_EVENT, ("rsvp", "event", "calendar", "2026")),
     (REASON_WIKI, ("wiki",)),
     (REASON_STOREFRONTS, ("store", "shop", "market")),
