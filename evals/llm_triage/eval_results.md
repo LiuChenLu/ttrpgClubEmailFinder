@@ -17,6 +17,16 @@ Notes:
 
 Token usage on eval set: 276270 total, 86062 cached (31%)
 
+### on ipeds_institution_has_ttrpg_club.csv
+
+This llm stage was able to correctly identify the ttrpg club page for all
+institutions in ipeds_institution_has_tttpg_club.csv except for schools where
+the club or conglomerate link was not found (i.e. University at Albany, South
+Seattle College, and Massachusetts Institute of Technology).
+
+A sample run of the ipeds_institution_has_ttrpg_club.csv file (8 schools) had
+token usage: 314022 total, 101153 cached (32%)
+
 ## Gemini 3.5-flash-lite, temperature 0, thinking_level low
 
 47 rows, 26 in the gate; 17 wrong ->
